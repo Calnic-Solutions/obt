@@ -1,0 +1,60 @@
+name: livuka
+description: "Livuka - Every Language. Beyond Words."
+publish_to: 'none'
+version: 0.1.6+3
+
+environment:
+  sdk: ^3.13.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  audio_waveforms: ^2.0.2
+  audioplayers: ^6.8.1
+  connectivity_plus: ^7.3.1
+  ffmpeg_kit_flutter_new_audio: ^2.5.2
+  flutter_secure_storage: ^11.2.0
+  flutter_svg: ^2.3.0
+  fluttertoast: ^10.0.0
+  get: ^4.7.3
+  http: ^1.6.0
+  path: ^1.9.1
+  path_provider: ^2.1.6
+  permission_handler: ^13.0.2
+  shared_preferences: ^2.5.5
+  webview_flutter: ^4.14.1
+  webview_flutter_android: ^4.0.0
+  sqflite_sqlcipher: ^3.4.1
+  cryptography: ^2.9.0
+  cryptography_flutter: ^2.3.4
+  workmanager: ^0.10.10
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
+    - assets/brand/
+    - docs/user-manual.html
+    - docs/mobile-user-manual.html
+
+  # The LIVUKA brand face, as the website sets it. Bundled rather than
+  # fetched: the app has to look the same before it has ever been online.
+  fonts:
+    - family: Montserrat
+      fonts:
+        - asset: assets/fonts/Montserrat-Regular.ttf
+        - asset: assets/fonts/Montserrat-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Montserrat-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Montserrat-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Montserrat-ExtraBold.ttf
+          weight: 800

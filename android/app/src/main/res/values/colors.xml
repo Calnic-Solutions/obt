@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- LIVUKA navy (#040134): the app icon's field and the launch screen. -->
+    <color name="ic_launcher_background">#040134</color>
+    <color name="livuka_navy">#040134</color>
+</resources>

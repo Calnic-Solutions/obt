@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The LIVUKA app icon on Android 8 and later: the smile on navy, which
+     the launcher masks to its own shape (circle, squircle, ...). The smile
+     sits inside the 66dp safe zone, so no mask cuts into it. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+</adaptive-icon>

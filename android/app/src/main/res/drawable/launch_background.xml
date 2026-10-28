@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What shows while the app starts, before Flutter draws its first frame:
+     the LIVUKA smile on navy, the same as the splash screen that follows,
+     so the start does not flash white first. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/livuka_navy" />
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/launch_smile" />
+    </item>
+</layer-list>
