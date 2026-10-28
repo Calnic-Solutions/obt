@@ -43,7 +43,9 @@ class MarkColors {
   static const Color sourceAudioDark = Color(0xFF3730A3);
 
   /// `--ob-brand-dark`: the foot of every brand-coloured player's gradient.
-  static const Color brandDark = Color(0xFF6D28D9);
+  /// The same dark orange as [MainApp.brandDark]; it was still the old
+  /// purple after the move to orange, and the play button faded into it.
+  static const Color brandDark = MainApp.brandDark;
 
   /// The darker end of a player's gradient for [accent]: the website's own
   /// pair for the three accents it paints players with (brand, source,

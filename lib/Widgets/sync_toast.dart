@@ -118,12 +118,13 @@ class _SyncToastCardState extends State<_SyncToastCard>
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // The app icon, the smile on navy: the whole logo, with
-                  // its wordmark, was too small to read at this size.
+                  // The light app icon, the smile on off-white: the whole
+                  // logo, with its wordmark, was too small to read at this
+                  // size, and the navy tile sat heavy on the white card.
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: SvgPicture.asset(
-                      'assets/brand/livuka-app-icon.svg',
+                      'assets/brand/livuka-app-icon-light.svg',
                       width: 44,
                       height: 44,
                     ),

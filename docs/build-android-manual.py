@@ -1,43 +1,65 @@
 # -*- coding: utf-8 -*-
 """Builds the printable phone manual (HTML -> PDF via headless Chrome)
-from real emulator screenshots in shots/."""
+from real emulator screenshots in <shots>/figs/<name>.png."""
 import base64
 import io
-import re
+import os
 import sys
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 S = sys.argv[1]
 OUT = sys.argv[2]
 SHOTS = S + '/figs/'
 
 
-_FIG = [0]
-
-
-def img(name, w=400):
-    _FIG[0] += 1
-    im = Image.open(SHOTS + 'fig_%02d.png' % _FIG[0]).convert('RGB')
+def img(name, w=400, boxes=()):
+    path = SHOTS + name + '.png'
+    if not os.path.exists(path):
+        return None
+    im = Image.open(path).convert('RGB')
+    # The button to tap, boxed in red: (x1, y1, x2, y2) in the screenshot's
+    # own pixels, drawn before scaling so the line keeps its weight.
+    draw = ImageDraw.Draw(im)
+    line = max(5, im.width // 110)
+    pad = im.width // 90
+    for x1, y1, x2, y2 in boxes:
+        draw.rounded_rectangle((x1 - pad, y1 - pad, x2 + pad, y2 + pad), radius=pad * 2,
+                               outline='#E11D2E', width=line)
     im = im.resize((w, round(im.height * w / im.width)), Image.LANCZOS)
     b = io.BytesIO()
     im.save(b, 'JPEG', quality=82, optimize=True)
     return 'data:image/jpeg;base64,' + base64.b64encode(b.getvalue()).decode()
 
 
-def fig(name, caption, size='m'):
+def fig(name, caption, size='m', boxes=()):
+    src = img(name, boxes=boxes)
+    if src is None:  # no screenshot of this screen yet: leave it out
+        print('missing screenshot:', name)
+        return ''
     return ('<figure class="%s"><img src="%s" alt=""><figcaption>%s</figcaption></figure>'
-            % (size, img(name), caption))
+            % (size, src, caption))
 
 
 def figs(items, size='m'):
-    return '<div class="row">' + ''.join(fig(n, c, size) for n, c in items) + '</div>'
+    # Each item is (name, caption) or (name, caption, [boxes]).
+    return '<div class="row">' + ''.join(fig(it[0], it[1], size, *it[2:]) for it in items) + '</div>'
 
 
-def mascot():
-    h = io.open('docs/user-manual.html', encoding='utf-8').read()
-    m = re.search(r'<svg class="login-mascot".*?</svg>', h, re.S)
-    return re.sub(r'\s+', ' ', m.group(0)).replace('class="login-mascot"', 'class="mascot"')
+def logo():
+    svg = io.open('assets/brand/livuka-logo-stacked.svg', encoding='utf-8').read()
+    return svg.replace('<svg ', '<svg class="logo" ', 1)
+
+
+def font_faces():
+    # Montserrat, the brand face of the app and the website, embedded so the
+    # PDF looks the same on any machine that builds it.
+    out = []
+    for weight, name in ((400, 'Regular'), (500, 'Medium'), (600, 'SemiBold'), (700, 'Bold'), (800, 'ExtraBold')):
+        data = base64.b64encode(open('assets/fonts/Montserrat-%s.ttf' % name, 'rb').read()).decode()
+        out.append('@font-face { font-family: "Montserrat"; font-weight: %d; src: url(data:font/ttf;base64,%s) format("truetype"); }'
+                   % (weight, data))
+    return '\n'.join(out)
 
 
 B = lambda t: '<b class="btn">%s</b>' % t  # a button on screen
@@ -45,10 +67,13 @@ B = lambda t: '<b class="btn">%s</b>' % t  # a button on screen
 CSS = '''
 @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
 * { box-sizing: border-box; }
-body { font-family: "Segoe UI", "Noto Sans", Arial, sans-serif; font-size: 10.5pt; line-height: 1.5; color: #040134; margin: 0; }
-h1 { font-size: 20pt; color: #A9441F; border-bottom: 2.5px solid #CD572D; padding-bottom: 4px; margin: 0 0 12px; page-break-after: avoid; }
-h2 { font-size: 12.5pt; margin: 18px 0 6px; page-break-after: avoid; }
-h3 { font-size: 11pt; margin: 14px 0 4px; page-break-after: avoid; }
+body { font-family: "Noto Sans", "Segoe UI", Arial, sans-serif; font-size: 10.5pt; line-height: 1.5; color: #040134; margin: 0; }
+h1, h2, h3, .btn, .pill, figcaption, th, .cover { font-family: "Montserrat", "Segoe UI", sans-serif; }
+h1 { font-size: 19pt; font-weight: 800; color: #040134; padding-bottom: 6px; margin: 0 0 12px; page-break-after: avoid;
+     background: linear-gradient(90deg, #CD572D 0 18mm, #E7E5EE 18mm) bottom / 100% 3px no-repeat; }
+h2 { font-size: 12.5pt; font-weight: 700; color: #040134; margin: 18px 0 6px; page-break-after: avoid; }
+h2::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #5DA0D3; margin: 0 8px 2px 0; }
+h3 { font-size: 11pt; font-weight: 700; margin: 14px 0 4px; page-break-after: avoid; }
 p { margin: 5px 0; }
 ol, ul { margin: 4px 0 8px; padding-left: 22px; }
 li { margin: 3px 0; }
@@ -56,29 +81,34 @@ li ul { margin: 2px 0; }
 section { page-break-before: always; }
 section.first { page-break-before: auto; }
 .btn { background: #FBEBE4; color: #A9441F; border-radius: 4px; padding: 0 5px; font-weight: 600; white-space: nowrap; }
-.note { border-left: 4px solid #CD572D; background: #FBEBE4; border-radius: 6px; padding: 8px 12px; margin: 10px 0; page-break-inside: avoid; }
+.note { border-left: 4px solid #5DA0D3; background: #EAF3FA; border-radius: 6px; padding: 8px 12px; margin: 10px 0; page-break-inside: avoid; }
 .note.warn { border-color: #D97706; background: #FEF3C7; }
 .note.good { border-color: #15803D; background: #DCFCE7; }
 .note.bad { border-color: #DC2626; background: #FEE2E2; }
 table { border-collapse: collapse; width: 100%; margin: 8px 0 12px; font-size: 10pt; page-break-inside: auto; }
 th, td { border: 1px solid #E5E7EB; padding: 6px 9px; text-align: left; vertical-align: top; }
-th { background: #F3F4F6; }
+th { background: #F5F4F1; font-weight: 700; font-size: 9.5pt; }
 tr { page-break-inside: avoid; }
-.row { display: flex; gap: 14px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 10px 0; page-break-inside: avoid; }
+.row { display: flex; gap: 10px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 10px 0; page-break-inside: avoid; }
 figure { margin: 10px auto; text-align: center; page-break-inside: avoid; }
 figure img { border: 6px solid #040134; border-radius: 22px; background: #000; display: block; margin: 0 auto; }
 figure.m img { width: 58mm; }
 figure.s img { width: 46mm; }
 figure.l img { width: 72mm; }
-figcaption { font-size: 9pt; color: #4B4870; margin-top: 5px; max-width: 60mm; margin-left: auto; margin-right: auto; }
+figure.xs img { width: 40mm; border-width: 5px; border-radius: 18px; }
+figure.xs { margin: 6px 0; }
+figure.xs figcaption { max-width: 39mm; }
+figcaption { font-size: 8.5pt; font-weight: 500; color: #4B4870; margin-top: 5px; max-width: 60mm; margin-left: auto; margin-right: auto; }
 figure.l figcaption { max-width: 80mm; }
 .pill { display: inline-block; background: #FBEBE4; color: #A9441F; border-radius: 999px; padding: 1px 9px; font-size: 9.5pt; font-weight: 600; margin: 2px 2px; }
 .arrow { color: #9CA3AF; margin: 0 2px; }
-.cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; }
-.cover .mascot { width: 32mm; height: auto; margin-bottom: 10mm; }
-.cover h1 { font-size: 30pt; border: 0; margin: 0 0 6px; }
-.cover .sub { font-size: 14pt; color: #4B5563; }
-.cover .meta { margin-top: 16mm; color: #4B4870; font-size: 10.5pt; }
+.cover { height: 258mm; display: flex; flex-direction: column; }
+.cover .logo { width: 62mm; height: auto; margin: 34mm 0 30mm -3mm; }
+.cover h1 { font-size: 30pt; background: none; padding: 0; margin: 0 0 8px; }
+.cover .sub { font-size: 13.5pt; font-weight: 500; color: #4B4870; max-width: 140mm; }
+.cover .band { margin-top: auto; background: #040134; color: #fff; border-radius: 14px; padding: 9mm 10mm; font-size: 10.5pt; line-height: 1.6;
+               display: flex; justify-content: space-between; align-items: flex-end; }
+.cover .band b { color: #5DA0D3; font-weight: 700; }
 .toc ol { columns: 1; }
 .toc li { margin: 2px 0; }
 small.muted { color: #4B4870; }
@@ -90,14 +120,14 @@ def page(title, body, first=False):
 
 
 html = []
-html.append('<!doctype html><html><head><meta charset="utf-8"><title>LIVUKA for Android - User manual</title><style>' + CSS + '</style></head><body>')
+html.append('<!doctype html><html><head><meta charset="utf-8"><title>LIVUKA for Android - User manual</title><style>' + font_faces() + CSS + '</style></head><body>')
 
 # ------------------------------------------------------------- cover
 html.append('''<section class="first"><div class="cover">%s
 <h1>LIVUKA for Android</h1>
 <div class="sub">User manual: installing the app on your phone and doing your work in it</div>
-<div class="meta">Version 0.1.0 &middot; October 2026<br>For Drafters, Peer Checkers, Back Translators and Consultants</div>
-</div></section>''' % mascot())
+<div class="band"><div><b>Version 0.1.6</b> &middot; October 2026<br>For Drafters, Peer Checkers, Back Translators and Consultants</div><div>&copy; 2026 LIVUKA</div></div>
+</div></section>''' % logo())
 
 # ------------------------------------------------------------- contents
 html.append(page('Contents', '''
@@ -125,49 +155,60 @@ html.append(page('1. Before you start', '''
 <ul>
 <li>An <b>Android phone or tablet</b> with Android 7.0 or newer. About <b>60 MB</b> free for the app itself, plus room for the audio of the Sets you are working on (a few hundred MB is typical).</li>
 <li>A quiet place to record. The phone&rsquo;s own microphone is fine; a headset microphone gives cleaner takes. Headphones help when you check recordings.</li>
-<li>An <b>internet connection</b> (Wi-Fi or mobile data) the first time you sign in, and whenever you send your work. You can record and review without internet in between.</li>
-<li>Your <b>email address and password</b>. Your project administrator gives you these. They are the same ones you use on the LIVUKA website.</li>
-<li>The app file <b>LIVUKA-0.1.6.apk</b>, downloaded from the LIVUKA website. Your project administrator gives you the link.</li>
+<li>An <b>internet connection</b> (Wi-Fi or mobile data) to download the app, the first time you sign in, and whenever you send your work. You can record and review without internet in between.</li>
+<li>Your <b>LIVUKA email address and password</b>. Your project administrator gives you these. They are the same ones you use on the LIVUKA website, and you need them both to download the app and to sign in to it.</li>
+<li>The phone&rsquo;s web browser, <b>Chrome</b>. You download the app from the LIVUKA website, <b>obt.calnicsolutions.in/download-app</b> (section 2).</li>
 </ul>
-<div class="note">You do not need to install anything else. Everything the app needs comes inside the APK file.</div>
-<div class="note warn">Download the APK from the LIVUKA website only. Do not install an LIVUKA file that arrived from anywhere else.</div>
+<div class="note">You do not need to install anything else. Everything the app needs comes inside the one downloaded file.</div>
+<div class="note warn">Download LIVUKA from obt.calnicsolutions.in only. Do not install a LIVUKA file that arrived from anywhere else.</div>
 '''))
 
 # ------------------------------------------------------------- 2 install
 html.append(page('2. Installing LIVUKA on your phone', '''
-<p>An APK is an app that is installed by hand from a downloaded file. Android checks with you several times before it lets such an app in. Every box below is normal. Answer them as shown.</p>
+<p>LIVUKA is not in the Play Store. You download it from the LIVUKA website on the phone itself and install it from there. Android checks with you several times before it lets such an app in. Every box below is normal. Answer them as shown.</p>
+<h2>Download the app</h2>
 <ol>
-<li><b>Download the APK on the phone.</b> Open the LIVUKA website in the phone&rsquo;s browser and tap the download link: the file is saved into the phone&rsquo;s <b>Download</b> folder.</li>
-<li><b>Open the Files app</b> (on some phones it is called <b>My Files</b> or <b>File Manager</b>) and find the file &mdash; usually under <b>Download</b>, or in <b>Phone storage</b> if you copied it there. Tap the LIVUKA APK.</li>
-</ol>
-%s
-<ol start="3">
-<li>Android may say <b>&ldquo;Your phone and personal data are more vulnerable to attack by unknown apps&hellip;&rdquo;</b>. Tap %s.</li>
-<li>If instead it says the Files app is <b>not allowed to install unknown apps</b>, tap <b>Settings</b> on that box, switch on <b>Allow from this source</b>, then go back. You can also find this later under <b>Settings &rarr; Apps &rarr; Special app access &rarr; Install unknown apps</b>.</li>
-<li>The box <b>Install this app?</b> shows the LIVUKA icon. Tap %s.</li>
+<li>On the phone, open <b>Chrome</b>, tap the address bar at the top and type <b>obt.calnicsolutions.in/download-app</b>. Tap the arrow on the keyboard to go.</li>
+<li>The LIVUKA sign-in page opens. Type your LIVUKA <b>email</b> and <b>password</b> and tap %s. If Chrome offers to save the password, you can tap past it.</li>
+<li>The <b>Download offline app</b> page opens. (If you are already signed in to the website, you can also reach it from the Workbench: tap the <b>&#8942;</b> three dots at the top right, then <b>Download offline app</b>.)</li>
+<li>Under <b>Android app</b>, tap %s.</li>
 </ol>
 %s
 ''' % (
-    figs([('u-files', 'The Files app on a phone. Tap the LIVUKA APK.')]),
-    B('Continue'), B('Install'),
-    figs([('i-step1', 'The unknown-apps warning. Tap Continue.'), ('i-unknown', 'If the Files app is "Not allowed", allow it here.'), ('i-step2', 'Install this app? Tap Install.')], 's'),
+    B('Sign in'), B('Download'),
+    figs([('w-menu', 'From the website: &#8942; &rarr; Download offline app.', [(316, 423, 703, 510)]), ('w-download', 'Under Android app, tap Download.', [(270, 968, 450, 1022)])], 'm'),
 )))
 
 html.append(page('2. Installing LIVUKA on your phone (continued)', '''
-<ol start="6">
-<li>Android installs the app, then <b>Google Play Protect</b> may show <b>&ldquo;App scan recommended&rdquo;</b>: Play Protect has not seen this app before. Tap %s. The scan takes a few seconds and needs internet.</li>
-<li>Play Protect answers <b>&ldquo;This app looks safe&rdquo;</b>. Tap %s.</li>
-<li><b>App installed.</b> Tap %s to start LIVUKA now. Later, open it from the LIVUKA icon in your app list.</li>
+<ol start="5">
+<li>Chrome asks <b>&ldquo;File might be harmful&rdquo;</b>, because it is an app file. It comes from the LIVUKA website, so tap %s.</li>
+<li>When the download has finished, <b>File downloaded</b> appears at the top of the screen for a few seconds. Tap %s. (Missed it? Tap Chrome&rsquo;s <b>&#8942;</b> &rarr; <b>Downloads</b> and tap the LIVUKA file.)</li>
+</ol>
+<h2>Install the app</h2>
+<ol start="7">
+<li>The first time, Android says <b>&ldquo;For your security, your phone is not allowed to install unknown apps from this source&rdquo;</b>. Tap %s.</li>
+<li>Switch on <b>Allow from this source</b>, then tap the <b>&larr;</b> back arrow at the top left. You only do this once; you can switch it off again later under <b>Settings &rarr; Apps &rarr; Special app access &rarr; Install unknown apps &rarr; Chrome</b>.</li>
 </ol>
 %s
-<div class="note">Older phones show <b>&ldquo;Blocked by Play Protect&rdquo;</b> instead. Tap <b>More details</b> and then <b>Install anyway</b>. If there is no such option, open the phone&rsquo;s <b>Play Protect</b> settings, switch <b>Scan apps with Play Protect</b> off, install LIVUKA, then switch it on again.</div>
+''' % (
+    B('Download anyway'), B('Open'), B('Settings'),
+    figs([('w-harmful', 'File might be harmful: tap Download anyway.', [(424, 855, 663, 939)]),
+          ('w-unknown', 'Not allowed from this source: tap Settings.', [(519, 840, 652, 915)]), ('w-allow', 'Switch on Allow from this source, then go back.', [(608, 428, 690, 476)])], 'xs'),
+)))
+
+html.append(page('2. Installing LIVUKA on your phone (continued)', '''
+<ol start="9">
+<li>The box <b>&ldquo;Do you want to install this application?&rdquo;</b> shows the LIVUKA icon. Tap %s.</li>
+<li><b>App installed.</b> Tap %s to start LIVUKA now. Later, open it from the LIVUKA icon in your app list. The app opens on its own sign-in page (section 3).</li>
+</ol>
+<div class="note">Some phones show <b>Google Play Protect</b> after Install: <b>&ldquo;App scan recommended&rdquo;</b> &mdash; tap <b>Scan app</b>, and when it says <b>&ldquo;This app looks safe&rdquo;</b>, tap <b>Install</b>. Older phones may show <b>&ldquo;Blocked by Play Protect&rdquo;</b>: tap <b>More details</b> and then <b>Install anyway</b>.</div>
 <h2>Let the app use your microphone</h2>
 <p>The first time you record, Android asks <b>&ldquo;Allow LIVUKA to record audio?&rdquo;</b>. Tap <b>While using the app</b>. If you tapped <b>Don&rsquo;t allow</b> by mistake, the record button says <i>Microphone is off</i>: tap <b>Open settings</b>, choose <b>Permissions &rarr; Microphone &rarr; Allow only while using the app</b>, and come back.</p>
 %s
 ''' % (
-    B('Scan app'), B('Install'), B('Open'),
-    figs([('i-step4', 'Play Protect: tap Scan app.'), ('i-step5', 'This app looks safe: tap Install.'), ('i-step6', 'App installed: tap Open.')], 's'),
-    figs([('m-mic-permission', 'The first recording asks for the microphone. Tap While using the app.')], 's'),
+    B('Install'), B('Open'),
+    figs([('w-install', 'Do you want to install this application? Tap Install.', [(540, 850, 652, 925)]), ('w-installed', 'App installed: tap Open.', [(540, 850, 652, 925)]),
+          ('m-mic-permission', 'The first recording asks for the microphone. Tap While using the app.', [(137, 1107, 943, 1239)])], 's'),
 )))
 
 # ------------------------------------------------------------- 3 sign in
@@ -185,9 +226,9 @@ html.append(page('3. Signing in', '''
 <div class="note">You sign in every time you open the app. With internet the server checks your password; without it the phone checks it against your last sign-in, and your work is there as you left it. The first sign-in on a phone needs internet, because that is when your work is downloaded.</div>
 ''' % (
     B('Sign in'),
-    figs([('m-login-empty', 'The sign-in screen.'), ('i-loading', 'Collecting your data. Wait until it finishes.')]),
+    figs([('m-login-empty', 'The sign-in screen.', [(66, 1549, 1014, 1686)]), ('i-loading', 'Collecting your data. Wait until it finishes.')]),
     B('Try again'), B('Skip'), B('Try all again'),
-    figs([('n-dlprob', 'Files that did not download, each with Try again and Skip.')]),
+    figs([('n-dlprob', 'Files that did not download, each with Try again and Skip.', [(129, 979, 951, 1086)])]),
 )))
 
 # ------------------------------------------------------------- 4 around
@@ -204,8 +245,8 @@ html.append(page('4. Finding your way around', '''
 <h2>Choosing a Set</h2>
 <p>Inside a tile, the Sets waiting for you are shown as cards with their progress. The box at the top, <b>Jump to a pending work item</b>, lists every Set you still have to do; pick one to go straight to it.</p>
 ''' % (
-    figs([('n-home', 'A Drafter’s Workbench. Nothing waits to be sent, so the bar says Check for updates.'), ('m-sentback-list', 'The Sent back tile opened: the Set says which stage returned it.')]),
-    figs([('n-drawer', 'Settings, behind the three dots.'), ('m-draft-list2', 'The Draft tile: a Set card with its progress bar.')]),
+    figs([('n-home', 'A Drafter’s Workbench. Nothing waits to be sent, so the bar says Check for updates.', [(560, 352, 1030, 821)]), ('m-sentback-list', 'The Sent back tile opened: the Set says which stage returned it.', [(49, 270, 1030, 790)])]),
+    figs([('n-drawer', 'Settings, behind the three dots.'), ('m-draft-list2', 'The Draft tile: a Set card with its progress bar.', [(49, 580, 1030, 1113)])]),
 )))
 
 # ------------------------------------------------------------- 5 send
@@ -213,7 +254,7 @@ html.append(page('5. Sending your work and getting new work', '''
 <p>LIVUKA keeps your work on the phone until you send it. Nothing leaves the phone on its own, so you can keep working where there is no internet.</p>
 <p>The <b>bar at the bottom of the Workbench</b> does the sending. It only appears while the phone has internet; without it you see a grey line such as <i>No network. 3 changes are waiting to be sent.</i></p>
 <ul>
-<li><b>Send (3)</b> &mdash; three Sets have changes on this phone: new takes, final choices, comments, questions, answers, verdicts, back translations or stage moves. <b>Slide the purple knob to the right</b> (do not just tap). Keep the screen open until it finishes.</li>
+<li><b>Send (3)</b> &mdash; three Sets have changes on this phone: new takes, final choices, comments, questions, answers, verdicts, back translations or stage moves. <b>Slide the orange knob to the right</b> (do not just tap). Keep the screen open until it finishes.</li>
 <li><b>Check for updates</b> &mdash; shown when nothing is waiting. Sliding it fetches new work: Sets assigned to you, Sets sent back to you, and files skipped earlier. Sets that are no longer yours are removed from the phone with their audio.</li>
 </ul>
 <p>Each send also carries the time you worked and a record of what you did (for example &ldquo;take recorded&rdquo;), for your administrator&rsquo;s reports.</p>
@@ -222,7 +263,7 @@ html.append(page('5. Sending your work and getting new work', '''
 <h2>Sync status</h2>
 <p>Open <b>&#8942; &rarr; Sync status</b> to see what is still waiting and when the last full send was. If the server refused a Set, it is listed with the reason in red, and your work on it stays on the phone. Two buttons can appear: %s keeps a copy of that Set&rsquo;s recordings in the phone&rsquo;s Download folder, and %s discards the refused work (only when the server cannot ever accept it).</p>
 ''' % (
-    figs([('m-home-send', 'Three Sets waiting: slide Send.'), ('n-offline', 'No internet: the bar is gone until the phone is connected.'), ('n-sync', 'Sync status when everything has been sent.')], 's'),
+    figs([('m-home-send', 'Four Sets waiting: slide Send.', [(50, 2021, 1031, 2176)]), ('n-offline', 'No internet: the bar is gone until the phone is connected.'), ('n-sync', 'Sync status when everything has been sent.')], 's'),
     B('Save recordings'), B('Give up this work'),
 )))
 
@@ -234,7 +275,7 @@ html.append(page('6. The Drafter: recording a Set', '''
 <ol>
 <li><b>Listen</b> to the source audio all the way to the end. Tap the waveform to jump to a spot; <b>1x</b> changes the speed.</li>
 <li><b>Read</b> the source script and the target script, and tick <b>I have read</b> under each one. The arrows in the corners open a script full screen.</li>
-<li>Tap the purple <b>microphone</b> and speak the passage. A red clock counts the seconds. The orange button <b>pauses</b>; the red button <b>stops</b> and saves the take.</li>
+<li>Tap the orange <b>microphone</b> and speak the passage. A red clock counts the seconds. The orange button <b>pauses</b>; the red button <b>stops</b> and saves the take.</li>
 <li>The app checks the take at once (<b>Automated QC</b>): clipping, silence at the ends, noise, length against the source, whether a voice was found, even volume. Green ticks pass, red crosses tell you what to fix. The take gets <b>QC: Good</b> or <b>QC: Bad</b>.</li>
 <li>You can record up to <b>6 takes</b> per passage. The squares in the strip show which are recorded.</li>
 </ol>
@@ -242,7 +283,7 @@ html.append(page('6. The Drafter: recording a Set', '''
 <div class="note">The phone remembers that you heard the source and read the scripts for this round of the Set. Coming back tomorrow to record take three, you go straight to the microphone.</div>
 ''' % (
     B('Record'),
-    figs([('m-set-new', 'A new Set with four passages.'), ('m-recorder', 'Before listening: the microphone is grey.'), ('m-ready2', 'Both scripts ticked: ready to record.')], 's'),
+    figs([('m-set-new', 'A new Set with three passages.', [(728, 479, 1003, 580)]), ('m-recorder', 'Before listening: the microphone is grey.', [(62, 392, 162, 502)]), ('m-ready2', 'Both scripts ticked: ready to record.', [(808, 1990, 982, 2164)])], 's'),
 )))
 
 html.append(page('6. The Drafter: recording a Set (continued)', '''
@@ -260,8 +301,8 @@ html.append(page('6. The Drafter: recording a Set (continued)', '''
 <p>When every passage is Finalized, the Set page shows the <b>Target Recording</b>: all the final takes joined together. Play it to the end. The %s button then turns on. Tap it and confirm with <b>Send</b>. Then slide <b>Send</b> on the Workbench when you have internet.</p>
 <p>Sets the Consultant has approved appear under <b>Approved</b>. Open one and tap %s to fetch its finished recording and hear it in the app.</p>
 ''' % (
-    figs([('m-recording', 'Recording: pause (orange) and stop (red).'), ('m-qc', 'A bad take: the QC says what went wrong.'), ('m-qc-good', 'A good take.')], 's'),
-    figs([('m-final', 'The Takes page: take 2 is Final.'), ('m-delete-dialog', 'Deleting a take asks first.'), ('549-takes', 'All passages final: hear the Target Recording, then send.')], 's'),
+    figs([('m-recording', 'Recording: pause (orange) and stop (red).', [(808, 1990, 982, 2164)]), ('m-qc', 'A bad take: the QC says what went wrong.'), ('m-qc-good', 'A good take.')], 's'),
+    figs([('m-final', 'The Takes page: take 6 is Final.', [(779, 459, 889, 553)]), ('m-delete-dialog', 'Deleting a take asks first.', [(154, 1278, 524, 1399)]), ('549-takes', 'All passages final: hear the Target Recording, then send.', [(88, 1052, 190, 1156), (44, 2016, 1036, 2176)])], 's'),
     B('Send to Peer Check'), B('Listen'),
 )))
 
@@ -280,7 +321,7 @@ html.append(page('7. The Drafter: a Set that was sent back', '''
 %s
 ''' % (
     B('Re-record'),
-    figs([('m-sentback-set', 'The red feedback box and the outlined passage.'), ('548-set7', 'The returned take with its pin.'), ('553-popup', 'The full comment, from the pin.')], 's'),
+    figs([('m-sentback-set', 'Who sent it back, and the outlined passage.', [(728, 586, 1003, 688)]), ('548-set7', 'The returned take with its pin.', [(400, 875, 478, 1010)]), ('553-popup', 'The full comment, from the pin.', [(771, 2126, 1025, 2247)])], 's'),
     figs([('63-feedback-set', 'A Set under Feedback: the liked answer and the reviewer’s comment.')], 's'),
 )))
 
@@ -329,9 +370,9 @@ html.append(page('9. The Peer Checker: Peer Check and Community Review', '''
 %s
 ''' % (
     B('Add a note here'), B('Send back to the Drafter'), B('Send to Community Setup'),
-    figs([('530-peercheck', 'Peer Check: both recordings and both scripts.'), ('275-voice-sheet', 'The note sheet, pinned at the spot you stopped.')], 's'),
+    figs([('530-peercheck', 'Peer Check: both recordings and both scripts.', [(83, 1730, 998, 1857)]), ('275-voice-sheet', 'The note sheet, pinned at the spot you stopped.', [(50, 2099, 1031, 2231)])], 's'),
     B('Like'), B('Dislike'), B('Send to Back Translation'), B('Send back to the Drafter'),
-    figs([('536-review2', 'Community Review: Like or Dislike each answer.'), ('518-dislike', 'Dislike asks what is wrong.')], 's'),
+    figs([('536-review2', 'Community Review: Like or Dislike each answer.', [(87, 945, 993, 1071)]), ('518-dislike', 'Dislike asks what is wrong.', [(50, 2099, 1031, 2231)])], 's'),
 )))
 
 # ------------------------------------------------------------- 10 BT
@@ -369,7 +410,7 @@ html.append(page('12. The built-in handbook', '''
 <li>Use the <b>Steps</b> button to jump to a stage, or the search box to find a word. The <b>&larr;</b> arrow in the handbook&rsquo;s own bar brings you back to the app.</li>
 </ol>
 %s
-''' % figs([('n-drawer', 'Settings: User manual under Help.'), ('r-manual', 'The handbook inside the app.'), ('m-steps', 'The Steps menu.')], 's')))
+''' % figs([('n-drawer', 'Settings: User manual under Help.', [(250, 1408, 1066, 1598)]), ('r-manual', 'The handbook inside the app.', [(795, 227, 1041, 340)]), ('m-steps', 'The Steps menu.')], 's')))
 
 # ------------------------------------------------------------- 13 safe
 html.append(page('13. Keeping your work safe', '''
@@ -382,14 +423,14 @@ html.append(page('13. Keeping your work safe', '''
 </ul>
 %s
 <div class="note">LIVUKA also records the time you spend on each stage and what you did (for example &ldquo;take recorded&rdquo; or &ldquo;sent to Peer Check&rdquo;). This goes to your administrator&rsquo;s reports with each send. Time only counts while a stage screen is open and you are touching the phone.</div>
-''' % figs([('306-signout', 'The sign-out box. Cancel keeps you signed in.')], 's')))
+''' % figs([('306-signout', 'The sign-out box: tap Sign Out. Cancel keeps you signed in.', [(644, 1201, 884, 1333)])], 's')))
 
 # ------------------------------------------------------------- 14 update
 html.append(page('14. Updating and uninstalling', '''
 <h2>Installing a new version</h2>
 <ol>
 <li>Slide <b>Send</b> so nothing is waiting to be sent.</li>
-<li>Download the new <b>LIVUKA-x.y.z.apk</b> from the LIVUKA website and open it from the Files app, exactly as in section 2. Android asks <b>&ldquo;Do you want to update this app?&rdquo;</b>; tap <b>Update</b> (or <b>Install</b>). You stay signed in and your work is kept.</li>
+<li>Download the new version from <b>obt.calnicsolutions.in/download-app</b> and open it, exactly as in section 2. Android asks <b>&ldquo;Do you want to update this app?&rdquo;</b>; tap <b>Update</b> (or <b>Install</b>). You stay signed in and your work is kept.</li>
 </ol>
 <div class="note warn">Never uninstall the old version first to update &mdash; uninstalling deletes everything the app holds, including unsent work.</div>
 <h2>Uninstalling</h2>
@@ -402,7 +443,7 @@ html.append(page('14. Updating and uninstalling', '''
 # ------------------------------------------------------------- 15 problems
 html.append(page('15. Problems and what to do', '''
 <table><tr><th style="width:38%%">What you see</th><th>What to do</th></tr>
-<tr><td>&ldquo;Not allowed to install unknown apps&rdquo; when opening the APK</td><td>Tap <b>Settings</b> on that box and switch on <b>Allow from this source</b> for the Files app (section 2).</td></tr>
+<tr><td>&ldquo;Not allowed to install unknown apps&rdquo; when opening the downloaded file</td><td>Tap <b>Settings</b> on that box and switch on <b>Allow from this source</b> for Chrome (section 2).</td></tr>
 <tr><td>Play Protect: &ldquo;App scan recommended&rdquo; or &ldquo;Blocked&rdquo;</td><td>Tap <b>Scan app</b>, then <b>Install</b>. On older phones: <b>More details &rarr; Install anyway</b> (section 2).</td></tr>
 <tr><td>&ldquo;App not installed&rdquo;</td><td>The phone is out of space, or the file was cut short while it was being sent. Free some space and download the APK again.</td></tr>
 <tr><td>Sign-in fails</td><td>Check the internet connection, and the email and password (use the eye icon). If it still fails, ask your administrator to check your account.</td></tr>
