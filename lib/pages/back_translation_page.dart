@@ -533,12 +533,17 @@ class BackTranslationPage extends StatelessWidget {
           ),
           body: Obx(
             () => controller.isLoading.value
-                ? const RecordingPageSkeleton(questions: 1)
+                ? _BackTranslationSkeleton(
+                    banner: SentBackBanner(set: controller.set),
+                  )
                 : _body(controller),
           ),
           bottomNavigationBar: Obx(
             () => controller.isLoading.value
-                ? const SizedBox.shrink()
+                ? StageBarBones(
+                    buttons: controller.actions.length,
+                    reasonLines: 1,
+                  )
                 : _actionBar(controller),
           ),
         ),
@@ -951,6 +956,106 @@ class _Composer extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// The page while it loads: the recording, the comment button, and the
+/// composer - all three fixed, so drawn as themselves. Nothing on this page
+/// waits on the load but the recording.
+class _BackTranslationSkeleton extends StatelessWidget {
+  const _BackTranslationSkeleton({required this.banner});
+
+  final Widget banner;
+
+  static const OutlineInputBorder _border = OutlineInputBorder(
+    borderSide: BorderSide(color: Color(0xFFE5E7EB)),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return RecordingPageSkeleton(
+      children: [
+        banner,
+        const PlayerBones(),
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: IgnorePointer(
+            child: CommentButton(
+              label: 'Not satisfied? Comment on it',
+              onPressed: () {},
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // [_Composer]'s card, empty, as it opens on a first visit.
+        IgnorePointer(
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: MainApp.cardShadow,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.translate,
+                      size: 15,
+                      color: MarkColors.backTranslationAudio,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Back translation (text or voice - either is fine)'.tr,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  maxLines: 5,
+                  minLines: 4,
+                  decoration: InputDecoration(
+                    hintText: 'Type the back translation...'.tr,
+                    border: _border,
+                    enabledBorder: _border,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F2F4),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.mic, size: 30, color: Color(0xFFDC2626)),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Tap to record audio'.tr,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

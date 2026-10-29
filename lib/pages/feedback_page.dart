@@ -67,7 +67,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
           future: _sets,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const SetListSkeleton(leading: true, rows: 4);
+              return _FeedbackListSkeleton(color: stage.color);
             }
 
             final sets = snapshot.data ?? const [];
@@ -202,7 +202,17 @@ class _FeedbackSetPageState extends State<FeedbackSetPage> {
         ),
       ),
       body: _loading
-          ? const RecordingPageSkeleton(questions: 2)
+          ? const RecordingPageSkeleton(
+              children: [
+                // Each liked answer is pinned where its question was asked.
+                PlayerBones(marks: true),
+                SizedBox(height: 16),
+                _FeedbackCardBones(),
+                SizedBox(height: 12),
+                _FeedbackCardBones(),
+                SizedBox(height: 12),
+              ],
+            )
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
@@ -337,6 +347,107 @@ class _FeedbackCard extends StatelessWidget {
         if (audioPath.isNotEmpty)
           AudioClip(key: ValueKey(audioPath), filePath: audioPath),
       ],
+    );
+  }
+}
+
+/// The Feedback list while it loads: the real row - its tile, its avatar
+/// and its chevron - with grey where the Set's name and count will be.
+class _FeedbackListSkeleton extends StatelessWidget {
+  const _FeedbackListSkeleton({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Shimmer(
+      child: ListView.separated(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        itemCount: 4,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (context, index) => Material(
+          color: Colors.white,
+          elevation: 3,
+          shadowColor: MainApp.cardShadowColor,
+          surfaceTintColor: Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            minVerticalPadding: 14,
+            leading: CircleAvatar(
+              backgroundColor: color.withValues(alpha: 0.14),
+              child: Icon(Icons.thumb_up_alt_outlined, size: 18, color: color),
+            ),
+            // In the tile's own text styles, so each line is the height of
+            // the one it stands in for.
+            title: const BoneText(
+              style: TextStyle(fontWeight: FontWeight.w700),
+              widthFactor: 0.75,
+            ),
+            subtitle: const BoneText(
+              style: TextStyle(fontSize: 12),
+              widthFactor: 0.45,
+            ),
+            trailing: const Icon(Icons.chevron_right),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [_FeedbackCard] while it loads: its icons as themselves, grey where the
+/// words go.
+class _FeedbackCardBones extends StatelessWidget {
+  const _FeedbackCardBones();
+
+  static const TextStyle _text = TextStyle(fontSize: 13, height: 1.4);
+
+  Widget _line(IconData icon, Color color, double widthFactor) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 15, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: BoneText(style: _text, widthFactor: widthFactor),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BoneCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: BoneText(
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+              width: 70,
+            ),
+          ),
+          _line(Icons.question_mark, const Color(0xFFCA8A04), 0.85),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 18),
+            child: _line(Icons.reply, const Color(0xFF15803D), 0.6),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFDCFCE7),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: _line(Icons.thumb_up_alt, const Color(0xFF15803D), 0.7),
+          ),
+        ],
+      ),
     );
   }
 }

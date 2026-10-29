@@ -323,12 +323,16 @@ class CommunityReviewPage extends StatelessWidget {
           ),
           body: Obx(
             () => controller.isLoading.value
-                ? const RecordingPageSkeleton(questions: 2)
+                ? _ReviewSkeleton(banner: SentBackBanner(set: controller.set))
                 : _body(controller),
           ),
           bottomNavigationBar: Obx(
             () => controller.isLoading.value
-                ? const SizedBox.shrink()
+                ? StageBarBones(
+                    buttons: controller.actions.length,
+                    reasonLines: 2,
+                    reasonStyle: const TextStyle(fontSize: 11, height: 1.4),
+                  )
                 : _actionBar(controller),
           ),
         ),
@@ -686,6 +690,99 @@ class _Empty extends StatelessWidget {
             'The community test produced no questions.'.tr,
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 12, color: MainApp.mutedText),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The page while it loads: the recording, then question cards in the
+/// question card's own frame, with Like and Dislike as themselves.
+class _ReviewSkeleton extends StatelessWidget {
+  const _ReviewSkeleton({required this.banner});
+
+  final Widget banner;
+
+  @override
+  Widget build(BuildContext context) {
+    return RecordingPageSkeleton(
+      children: [
+        banner,
+        // The questions are pinned on the recording.
+        const PlayerBones(marks: true),
+        const SizedBox(height: 18),
+        for (var i = 0; i < 2; i++) ...[
+          const _QaCardBones(),
+          const SizedBox(height: 12),
+        ],
+      ],
+    );
+  }
+}
+
+class _QaCardBones extends StatelessWidget {
+  const _QaCardBones();
+
+  /// [_Line]'s row: the tinted square, then the words.
+  static Widget _line(double widthFactor) => Row(
+    children: [
+      const Bone(width: 20, height: 20, radius: 6),
+      const SizedBox(width: 8),
+      Expanded(
+        child: BoneText(
+          style: const TextStyle(fontSize: 13),
+          widthFactor: widthFactor,
+        ),
+      ),
+    ],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: MainApp.cardShadow,
+        // The real card's highlight border, unlit: it takes its room.
+        border: Border.all(color: Colors.transparent, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _line(0.85),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 18),
+            child: _line(0.55),
+          ),
+          const SizedBox(height: 12),
+          IgnorePointer(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _VerdictButton(
+                    label: 'Like',
+                    icon: Icons.thumb_up_alt_rounded,
+                    color: const Color(0xFF15803D),
+                    selected: false,
+                    onPressed: () {},
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _VerdictButton(
+                    label: 'Dislike',
+                    icon: Icons.thumb_down_alt_rounded,
+                    color: MainApp.sendBackRed,
+                    selected: false,
+                    onPressed: () {},
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

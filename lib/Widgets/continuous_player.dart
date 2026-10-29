@@ -248,32 +248,14 @@ class _ContinuousPlayerState extends State<ContinuousPlayer> {
   @override
   Widget build(BuildContext context) {
     if (_playback.loading) {
-      // The player's own shape - its heading as itself, since that is
-      // fixed, and grey where the waveform and the controls will be.
+      // The player's own shape, row for row: the heading and controls as
+      // themselves, since they are fixed, and grey where the play button,
+      // the waveform and the clocks will be.
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.header != null) ...[
-            widget.header!,
-            const SizedBox(height: 12),
-          ],
-          Shimmer(
-            child: Column(
-              children: [
-                const Bone(height: _waveHeight, radius: 8),
-                const SizedBox(height: 10),
-                Row(
-                  children: const [
-                    Bone.circle(size: 40),
-                    SizedBox(width: 12),
-                    Bone(width: 72, height: 11),
-                    Spacer(),
-                    Bone(width: 44, height: 24, radius: 12),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          PlayerControlsRow(header: widget.header ?? const SizedBox.shrink()),
+          Shimmer(child: PlayerWaveBones(waveTop: _waveTop)),
         ],
       );
     }
@@ -296,12 +278,11 @@ class _ContinuousPlayerState extends State<ContinuousPlayer> {
     //
     // Recolouring the bars themselves meant rebuilding the waveform, which
     // reads on screen as the audio reloading at the very moment it finishes.
-    // Nothing is rebuilt now; the green simply covers the whole width when
-    // the reading has been heard and is back at its start, and covers what
-    // has been played otherwise.
-    final played = _playback.heard && !_running && _elapsed == Duration.zero
-        ? 1.0
-        : progress;
+    // Nothing is rebuilt now; the green covers exactly what has been played
+    // up to the playhead, and the whole width only once the reading has run
+    // out at its end and nobody has moved since - see
+    // [TimelinePlayback.atEnd].
+    final played = _playback.atEnd ? 1.0 : progress;
 
     // Time runs left to right whatever language the app is in. Left to
     // mirror, the play button and the clock would swap ends under Urdu while
@@ -377,13 +358,30 @@ class _ContinuousPlayerState extends State<ContinuousPlayer> {
                   maxSize: 72,
                   child: GestureDetector(
                     onTap: _playback.toggle,
-                    child: MarkColors.shaded(
-                      widget.accent,
-                      Icon(
-                        _running ? Icons.pause_circle : Icons.play_circle,
-                        size: 38,
-                        color: widget.accent,
-                      ),
+                    // The triangle is a hole cut in the icon's circle, so the
+                    // halo showed through it. A small white disc behind,
+                    // just big enough to fill the triangle (and the pause
+                    // bars), keeps it white.
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          width: 17,
+                          height: 17,
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        MarkColors.shaded(
+                          widget.accent,
+                          Icon(
+                            _running ? Icons.pause_circle : Icons.play_circle,
+                            size: 38,
+                            color: widget.accent,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -467,7 +465,11 @@ class _ContinuousPlayerState extends State<ContinuousPlayer> {
             padding: const EdgeInsets.only(left: _waveInset),
             child: Row(
               children: [
-                Text(_format(_elapsed), style: _clock),
+                // At the end, as the bars are, until the listener moves.
+                Text(
+                  _format(_playback.atEnd ? _total : _elapsed),
+                  style: _clock,
+                ),
                 const Spacer(),
                 Text(_format(_total), style: _clock),
               ],

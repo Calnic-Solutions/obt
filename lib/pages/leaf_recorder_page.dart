@@ -1055,7 +1055,7 @@ class LeafRecorderPage extends StatelessWidget {
           ),
           body: Obx(
             () => controller.isLoading.value
-                ? const SafeArea(child: RecorderSkeleton())
+                ? _RecorderSkeleton(controller: controller)
                 : Stack(
                     children: [
                       Positioned.fill(
@@ -2438,6 +2438,306 @@ class _ReRecordButton extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The recorder while the passage loads, laid out by the pane's own rules:
+/// the source player and the two scripts in the panel, the take slots, and
+/// the card the mic sits in - or the takes list, when that is where the
+/// page is opening.
+class _RecorderSkeleton extends StatelessWidget {
+  const _RecorderSkeleton({required this.controller});
+
+  final LeafRecorderController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    if (controller.showingTakes.value) return _takes();
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final split =
+                constraints.maxHeight >= LeafRecorderPage._splitMinHeight;
+            final children = [
+              split
+                  ? const Expanded(child: _PanelBones())
+                  : const SizedBox(height: 360, child: _PanelBones()),
+              const SizedBox(height: 8),
+              const _TakeSlotsBones(),
+              const SizedBox(height: 8),
+              _recordCard(),
+            ];
+            return Shimmer(
+              child: split
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: children,
+                    )
+                  : ListView(
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: children,
+                    ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// [_recordCard] idle: the prompt beside the mic, or for anyone but the
+  /// drafter the one fixed line it holds instead.
+  Widget _recordCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: controller.isDraftingStage
+          ? const Row(
+              children: [
+                Expanded(
+                  child: BoneText(
+                    style: TextStyle(fontSize: 12),
+                    widthFactor: 0.6,
+                  ),
+                ),
+                SizedBox(width: 14),
+                Bone.circle(size: 64),
+              ],
+            )
+          : Text(
+              'Listen to the final take and mark anything that needs to '
+                      'change.'
+                  .tr,
+              style: const TextStyle(fontSize: 12, color: MainApp.mutedText),
+            ),
+    );
+  }
+
+  /// [_takesPane] while it loads: its heading, and take cards.
+  Widget _takes() {
+    return SafeArea(
+      child: Shimmer(
+        child: ListView(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.layers_outlined,
+                  size: 16,
+                  color: Color(0xFF4B5563),
+                ),
+                const SizedBox(width: 6),
+                BoneShape(
+                  child: Text(
+                    'All takes (@count/@max)'.trParams({
+                      'count': '0',
+                      'max': '${LeafRecorderController.maxTakes}',
+                    }),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            for (var i = 0; i < 2; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _TakeCardBones(actions: controller.isDraftingStage),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// [ReferencePanel] while it loads, by its own rules: pinned from 300px
+/// tall, the scripts side by side from 600px wide.
+class _PanelBones extends StatelessWidget {
+  const _PanelBones();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final pinned = constraints.maxHeight >= 300;
+        final wide = constraints.maxWidth >= 600;
+        const source = ScriptBones.source(
+          kind: ScriptCardKind.recorder,
+          lines: 20,
+        );
+        const target = ScriptBones.target(
+          kind: ScriptCardKind.recorder,
+          lines: 20,
+        );
+        final scripts = wide
+            ? const Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: source),
+                  SizedBox(width: 12),
+                  Expanded(child: target),
+                ],
+              )
+            : Column(
+                mainAxisSize: pinned ? MainAxisSize.max : MainAxisSize.min,
+                children: pinned
+                    ? const [
+                        Expanded(child: source),
+                        SizedBox(height: 8),
+                        Expanded(child: target),
+                      ]
+                    : const [source, SizedBox(height: 8), target],
+              );
+
+        // [_AudioBox]: the source recording in its bordered card.
+        final player = Container(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: AudioClipBones(
+            header: AudioClip.label(Icons.volume_up_rounded, 'Source audio'),
+          ),
+        );
+
+        if (pinned) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              player,
+              const SizedBox(height: 8),
+              Expanded(child: scripts),
+            ],
+          );
+        }
+        return SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              player,
+              const SizedBox(height: 8),
+              wide ? IntrinsicHeight(child: scripts) : scripts,
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// [_TakeSlots] while it loads: its icon, its heading's room, and the six
+/// slots at their size.
+class _TakeSlotsBones extends StatelessWidget {
+  const _TakeSlotsBones();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.format_list_numbered_rounded,
+              size: 15,
+              color: Color(0xFF4B5563),
+            ),
+            const SizedBox(width: 6),
+            BoneShape(
+              child: Text(
+                'Takes recorded (@count/@max)'.trParams({
+                  'count': '0',
+                  'max': '${LeafRecorderController.maxTakes}',
+                }),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            for (
+              var slot = 1;
+              slot <= LeafRecorderController.maxTakes;
+              slot++
+            ) ...[
+              if (slot > 1) const SizedBox(width: 8),
+              const Expanded(child: Bone(height: 44, radius: 8)),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// [_TakeCard] while it loads: its name, its QC tag, its three buttons
+/// and its clip, each at its own size.
+class _TakeCardBones extends StatelessWidget {
+  const _TakeCardBones({required this.actions});
+
+  /// Whether the card carries QC, Final and Delete - not for a reviewer.
+  final bool actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return BoneCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    BoneText(
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                      width: 60,
+                    ),
+                    SizedBox(height: 5),
+                    BoneShape(
+                      radius: 999,
+                      child: _Tag(label: 'QC: Good', color: Color(0xFF1E8E3E)),
+                    ),
+                  ],
+                ),
+              ),
+              if (actions)
+                for (var i = 0; i < 3; i++)
+                  const Padding(
+                    padding: EdgeInsetsDirectional.only(start: 6),
+                    child: Bone.circle(size: 34),
+                  ),
+            ],
+          ),
+          const AudioClipBones(),
+        ],
       ),
     );
   }

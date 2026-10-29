@@ -369,12 +369,18 @@ class ConsultantPage extends StatelessWidget {
           ),
           body: Obx(
             () => controller.isLoading.value
-                ? const RecordingPageSkeleton(leadingCard: true, scripts: true)
+                ? _ConsultantSkeleton(
+                    banner: SentBackBanner(set: controller.set),
+                  )
                 : _body(context, controller),
           ),
           bottomNavigationBar: Obx(
             () => controller.isLoading.value
-                ? const SizedBox.shrink()
+                ? StageBarBones(
+                    buttons: controller.actions.length,
+                    reasonLines: 1,
+                    buttonHeight: 56,
+                  )
                 : _actionBar(controller),
           ),
         ),
@@ -764,6 +770,93 @@ class _CommentCard extends StatelessWidget {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The page while it loads, in the page's order and with its landscape
+/// rule: the back translation, the recording, then the source script, the
+/// source audio and the target script.
+class _ConsultantSkeleton extends StatelessWidget {
+  const _ConsultantSkeleton({required this.banner});
+
+  final Widget banner;
+
+  @override
+  Widget build(BuildContext context) {
+    return RecordingPageSkeleton(
+      children: [
+        banner,
+        const _BackTranslationCardBones(),
+        const SizedBox(height: 12),
+        const PlayerBones(),
+        const SizedBox(height: 12),
+        if (ScriptPair.sideBySide(context)) ...[
+          const ScriptPair(
+            gap: 12,
+            source: ScriptBones.source(),
+            target: ScriptBones.target(),
+          ),
+          const SizedBox(height: 12),
+          const PlayerBones.source(),
+        ] else ...[
+          const ScriptBones.source(),
+          const SizedBox(height: 12),
+          const PlayerBones.source(),
+          const SizedBox(height: 12),
+          const ScriptBones.target(lines: 5),
+        ],
+      ],
+    );
+  }
+}
+
+/// [_BackTranslationCard] while it loads: its heading and comment button
+/// as themselves, the back translation as lines of its own size.
+class _BackTranslationCardBones extends StatelessWidget {
+  const _BackTranslationCardBones();
+
+  @override
+  Widget build(BuildContext context) {
+    return BoneCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.translate,
+                size: 15,
+                color: MarkColors.backTranslationAudio,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Back translation'.tr,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              IgnorePointer(
+                child: IconButton(
+                  onPressed: () {},
+                  icon: const Icon(
+                    Icons.wechat_rounded,
+                    size: 20,
+                    color: MarkColors.comment,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const BoneParagraph(
+            lines: 3,
+            style: TextStyle(fontSize: 14, height: 1.5),
+          ),
         ],
       ),
     );

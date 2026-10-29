@@ -291,8 +291,14 @@ class _ReviewPlayerPageState extends State<ReviewPlayerPage>
       // A little behind the guess: hold, and let the audio catch up. A
       // playhead that twitches backwards looks like a fault.
     } else {
-      // Not playing, so nothing is guessed at. The engine's word is final.
-      t = reported;
+      // Not playing, so nothing is guessed at. The engine's word is final -
+      // except a hair behind where the glide had got to as it was paused:
+      // the last report always trails the sound a little, and snapping
+      // back to it stepped the played bars backwards on every pause. A
+      // report further away than that is a move somebody made, and is
+      // followed.
+      final trailing = t - reported;
+      if (!(trailing > 0 && trailing <= 0.25 + 0.25 * speed)) t = reported;
     }
 
     t = t.clamp(0.0, math.max(0.0, total));
@@ -324,11 +330,9 @@ class _ReviewPlayerPageState extends State<ReviewPlayerPage>
         .clamp(0.0, math.max(0.0, total - window))
         .toDouble();
 
-    final allPlayed =
-        playback.heard &&
-        !playback.running &&
-        _scrub == _Scrub.none &&
-        playback.elapsed == Duration.zero;
+    // Only after the reading ran out at its end and before anyone moved -
+    // see [TimelinePlayback.atEnd].
+    final allPlayed = playback.atEnd && _scrub == _Scrub.none;
 
     _clock.value = t.floor();
 

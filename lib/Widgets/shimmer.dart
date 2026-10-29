@@ -1,8 +1,13 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:get/get.dart';
 
 import 'package:livuka/main.dart';
+import 'package:livuka/Widgets/mark_colors.dart';
+import 'package:livuka/Widgets/speed_selector.dart';
 
 /// Loading drawn as the shape of what is coming.
 ///
@@ -12,9 +17,10 @@ import 'package:livuka/main.dart';
 /// across it says the wait is alive. Every page's loading state is built
 /// from the pieces here, each shaped to the content it stands in for.
 ///
-/// Only what is being loaded is drawn this way. Headings and labels that are
-/// fixed in the page are drawn as themselves, so the page's own words are
-/// never shown as grey bars.
+/// Only what is being loaded is drawn this way. Headings, icons and buttons
+/// that are fixed in the page are drawn as themselves, so the page's own
+/// words are never shown as grey bars - and so they cannot be a pixel out
+/// from the page that replaces them.
 class Shimmer extends StatefulWidget {
   const Shimmer({super.key, required this.child, this.delay = _defaultDelay});
 
@@ -127,8 +133,12 @@ class Bone extends StatelessWidget {
       height = size,
       radius = size / 2;
 
+  /// As big as the box it is given - for [BoneShape], which hands it the
+  /// exact size of the widget it stands in for.
+  const Bone.fill({super.key, this.radius = 6}) : width = null, height = null;
+
   final double? width;
-  final double height;
+  final double? height;
   final double radius;
 
   @override
@@ -218,41 +228,128 @@ class _BonePainter extends CustomPainter {
       old.radius != radius;
 }
 
-/// Lines of text, the last one shorter, as a paragraph ends.
-class BoneLines extends StatelessWidget {
-  const BoneLines({
+/// One line of text that is still loading.
+///
+/// Exactly as tall as a real line of [style] - measured with the app's own
+/// font, in the text style around it - with a bar through its middle. A bar
+/// guessed at the font size was a few pixels short of the line it stood in
+/// for, and a column of them came up short by a line's worth.
+///
+/// [width] fixes how long the bar is; without it the bar spans the width it
+/// is given, cut to [widthFactor].
+class BoneText extends StatelessWidget {
+  const BoneText({super.key, this.style, this.width, this.widthFactor = 1});
+
+  final TextStyle? style;
+  final double? width;
+  final double widthFactor;
+
+  /// The height one line of [style] takes here, as a [Text] would draw it.
+  static double lineHeight(BuildContext context, [TextStyle? style]) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: 'Hg',
+        style: DefaultTextStyle.of(context).style.merge(style),
+      ),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final height = painter.height;
+    painter.dispose();
+    return height;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final effective = DefaultTextStyle.of(context).style.merge(style);
+    final line = lineHeight(context, style);
+    final font = MediaQuery.textScalerOf(context)
+        .scale(effective.fontSize ?? 14);
+    final bar = math.min(line, (font * 0.8).roundToDouble());
+
+    if (width != null) {
+      return SizedBox(
+        width: width,
+        height: line,
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Bone(width: width, height: bar, radius: bar / 2),
+        ),
+      );
+    }
+    return SizedBox(
+      height: line,
+      child: LayoutBuilder(
+        builder: (context, constraints) => Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Bone(
+            width: constraints.maxWidth * widthFactor,
+            height: bar,
+            radius: bar / 2,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A paragraph that is still loading: [lines] lines of [style], set solid
+/// as a [Text] sets them, the last one shorter, as a paragraph ends.
+class BoneParagraph extends StatelessWidget {
+  const BoneParagraph({
     super.key,
     this.lines = 3,
-    this.height = 11,
-    this.gap = 8,
+    this.style,
     this.lastWidth = 0.6,
   });
 
   final int lines;
-  final double height;
-  final double gap;
+  final TextStyle? style;
 
   /// The last line's share of the width.
   final double lastWidth;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < lines; i++) ...[
-            Bone(
-              width: i == lines - 1
-                  ? constraints.maxWidth * lastWidth
-                  : constraints.maxWidth,
-              height: height,
-            ),
-            if (i < lines - 1) SizedBox(height: gap),
-          ],
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < lines; i++)
+          BoneText(
+            style: style,
+            widthFactor: i == lines - 1 && lines > 1 ? lastWidth : 1,
+          ),
+      ],
+    );
+  }
+}
+
+/// A bone the exact size of [child], which is laid out but never drawn.
+///
+/// For the pills, tags and buttons whose words depend on what is loading:
+/// the real widget, with a typical label, decides how much room the shape
+/// takes, so it takes the same room as the one that replaces it.
+class BoneShape extends StatelessWidget {
+  const BoneShape({super.key, required this.child, this.radius = 6});
+
+  final Widget child;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Visibility(
+          visible: false,
+          maintainSize: true,
+          maintainAnimation: true,
+          maintainState: true,
+          child: IgnorePointer(child: child),
+        ),
+        Positioned.fill(child: Bone.fill(radius: radius)),
+      ],
     );
   }
 }
@@ -267,7 +364,7 @@ class BoneCard extends StatelessWidget {
   });
 
   final Widget child;
-  final EdgeInsets padding;
+  final EdgeInsetsGeometry padding;
   final double radius;
 
   @override
@@ -289,38 +386,188 @@ class BoneCard extends StatelessWidget {
 // The pieces pages are made of.
 // ---------------------------------------------------------------------------
 
-/// A recording card - heading, waveform, the play button and the clock -
-/// as [MergedRecordingCard] lays one out.
-class PlayerBones extends StatelessWidget {
-  const PlayerBones({super.key, this.flat = false});
+/// The row over a [ContinuousPlayer]'s waveform: the heading, the
+/// full-screen button and the speed pill - the last two as themselves,
+/// greyed, since neither depends on what is loading.
+class PlayerControlsRow extends StatelessWidget {
+  const PlayerControlsRow({super.key, required this.header});
 
-  /// Without the card: for a page that pins its players in a bar of its own.
+  final Widget header;
+
+  @override
+  Widget build(BuildContext context) {
+    // Held left to right like the player's own row.
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Row(
+        children: [
+          Expanded(
+            child: Directionality(
+              textDirection: Directionality.of(context),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: header,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // The player's own button, configured the same, so the row is the
+          // height the player's is.
+          IconButton(
+            onPressed: null,
+            icon: const Icon(Icons.open_in_full_rounded),
+            iconSize: 16,
+            color: MainApp.mutedText,
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 34, minHeight: 30),
+          ),
+          const SizedBox(width: 4),
+          SpeedSelector(value: 1, onChanged: (_) {}, enabled: false),
+        ],
+      ),
+    );
+  }
+}
+
+/// The play button, the waveform beside it and the two clocks under it, as
+/// a [ContinuousPlayer] lays them out once loaded.
+class PlayerWaveBones extends StatelessWidget {
+  const PlayerWaveBones({super.key, this.waveTop = 0});
+
+  /// The pins' lane above the waveform, when the recording has pins.
+  final double waveTop;
+
+  static const double _waveHeight = 40;
+  static const double _waveInset = 46;
+
+  @override
+  Widget build(BuildContext context) {
+    const clock = TextStyle(fontSize: 11);
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Padding(
+                padding: EdgeInsets.only(top: waveTop),
+                // The 38px play icon's box; the disc inside it is 32.
+                child: const SizedBox(
+                  width: 38,
+                  height: 38,
+                  child: Center(child: Bone.circle(size: 32)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SizedBox(
+                  height: waveTop + _waveHeight,
+                  child: const Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Bone(height: _waveHeight, radius: 8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.only(left: _waveInset),
+            child: Row(
+              children: [
+                BoneText(style: clock, width: 28),
+                Spacer(),
+                BoneText(style: clock, width: 28),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A [MergedRecordingCard] with a recording to play, still loading: its
+/// heading as itself, its controls greyed, the waveform and clocks grey.
+class PlayerBones extends StatelessWidget {
+  const PlayerBones({
+    super.key,
+    this.flat = false,
+    this.title = 'Target Recording',
+    this.icon = Icons.headphones,
+    this.accent = MainApp.primaryGreen,
+    this.hint = '',
+    this.marks = false,
+  });
+
+  /// Source audio, as every page names and colours it.
+  const PlayerBones.source({super.key, this.flat = false, this.marks = false})
+    : title = 'Source audio',
+      icon = Icons.volume_up_rounded,
+      accent = MarkColors.sourceAudio,
+      hint = '';
+
+  /// Without the card: for a page that draws the card itself.
   final bool flat;
+  final String title;
+  final IconData icon;
+  final Color accent;
+  final String hint;
+
+  /// Whether the recording will carry pins, which put a lane over the
+  /// waveform.
+  final bool marks;
+
+  /// [ContinuousPlayer]'s lane for its pins: two of its 15px rows.
+  static const double pinLane = 30;
+
+  /// The heading [MergedRecordingCard] hands its player.
+  static Widget heading({
+    required String title,
+    required IconData icon,
+    required Color accent,
+    String hint = '',
+  }) {
+    final row = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: accent),
+        const SizedBox(width: 6),
+        Text(
+          title.tr,
+          maxLines: 1,
+          softWrap: false,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+        ),
+      ],
+    );
+    if (hint.isEmpty) return row;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        row,
+        const SizedBox(height: 2),
+        Text(
+          hint.tr,
+          maxLines: 1,
+          softWrap: false,
+          style: const TextStyle(fontSize: 11, color: MainApp.mutedText),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: const [
-            Bone.circle(size: 16),
-            SizedBox(width: 6),
-            Bone(width: 120, height: 13),
-          ],
+        PlayerControlsRow(
+          header: heading(title: title, icon: icon, accent: accent, hint: hint),
         ),
-        const SizedBox(height: 12),
-        const Bone(height: 44, radius: 8),
-        const SizedBox(height: 10),
-        Row(
-          children: const [
-            Bone.circle(size: 40),
-            SizedBox(width: 12),
-            Bone(width: 72, height: 11),
-            Spacer(),
-            Bone(width: 44, height: 24, radius: 12),
-          ],
-        ),
+        PlayerWaveBones(waveTop: marks ? pinLane : 0),
       ],
     );
     if (flat) return body;
@@ -331,148 +578,297 @@ class PlayerBones extends StatelessWidget {
   }
 }
 
-/// A script card: its small heading and a paragraph of text.
-class ScriptBones extends StatelessWidget {
-  const ScriptBones({super.key, this.lines = 6, this.flat = false});
+/// An [AudioClip] still loading: the control row, the play button and
+/// waveform, and the clocks, at the clip's own sizes.
+class AudioClipBones extends StatelessWidget {
+  const AudioClipBones({super.key, this.header});
 
-  final int lines;
-  final bool flat;
-
-  static const double _line = 12;
-  static const double _gap = 9;
+  /// The clip's heading, when it has one - fixed, so drawn as itself.
+  final Widget? header;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // In a box of fixed height - a frame on a phone held sideways -
-        // only the lines that fit are drawn. Lines past the bottom would
-        // overflow the card, and a skeleton must never paint outside the
-        // shape it stands in for.
-        var shown = lines;
-        if (constraints.hasBoundedHeight) {
-          final room = constraints.maxHeight - (flat ? 0 : 32) - 16 - 14 + _gap;
-          shown = (room / (_line + _gap)).floor().clamp(0, lines);
-        }
-        final body = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: const [
-                Bone.circle(size: 16),
-                SizedBox(width: 6),
-                Bone(width: 96, height: 13),
+    const clock = TextStyle(fontSize: 11);
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: header == null
+                    ? const SizedBox.shrink()
+                    : Directionality(
+                        textDirection: Directionality.of(context),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: header,
+                        ),
+                      ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 34,
+                height: 30,
+                child: Icon(
+                  Icons.open_in_full_rounded,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onSurface
+                      .withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(width: 4),
+              SpeedSelector(value: 1, onChanged: (_) {}, enabled: false),
+            ],
+          ),
+          const Row(
+            children: [
+              SizedBox(
+                width: 25,
+                height: 25,
+                child: Center(child: Bone.circle(size: 20)),
+              ),
+              SizedBox(width: 4),
+              Expanded(
+                child: SizedBox(
+                  height: 52,
+                  child: Center(child: Bone(height: 40, radius: 8)),
+                ),
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.only(left: 29, top: 2),
+            child: Row(
+              children: [
+                BoneText(style: clock, width: 30),
+                Spacer(),
+                BoneText(style: clock, width: 30),
               ],
             ),
-            if (shown > 0) ...[
-              const SizedBox(height: 14),
-              BoneLines(lines: shown, height: _line, gap: _gap),
-            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Which of the app's three script cards a [ScriptBones] stands in for.
+enum ScriptCardKind {
+  /// [SourceContentCard] / [TargetContentCard] in a scrolling list.
+  list,
+
+  /// The same cards in a fixed frame of the peer check screen.
+  frame,
+
+  /// The recorder's bordered script card.
+  recorder,
+}
+
+/// A script card still loading: its heading and expand button as
+/// themselves, the script as lines of the script's own size.
+class ScriptBones extends StatelessWidget {
+  const ScriptBones({
+    super.key,
+    required this.title,
+    required this.icon,
+    this.kind = ScriptCardKind.list,
+    this.lines = 6,
+    this.bottom = 12,
+  });
+
+  const ScriptBones.source({
+    super.key,
+    this.kind = ScriptCardKind.list,
+    this.lines = 6,
+  }) : title = 'Source script',
+       icon = Icons.description_outlined,
+       bottom = 12;
+
+  const ScriptBones.target({
+    super.key,
+    this.kind = ScriptCardKind.list,
+    this.lines = 6,
+  }) : title = 'Target script',
+       icon = Icons.translate,
+       bottom = 14;
+
+  final String title;
+  final IconData icon;
+  final ScriptCardKind kind;
+  final int lines;
+
+  /// The list card's bottom padding: 12 under the source, 14 under the
+  /// target.
+  final double bottom;
+
+  static const TextStyle _script = TextStyle(fontSize: 12);
+
+  EdgeInsets get _padding => switch (kind) {
+    ScriptCardKind.list => EdgeInsets.fromLTRB(16, 8, 16, bottom),
+    ScriptCardKind.frame => const EdgeInsets.fromLTRB(16, 8, 16, 8),
+    ScriptCardKind.recorder => const EdgeInsets.fromLTRB(12, 6, 12, 4),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final small = kind != ScriptCardKind.list;
+    final titleStyle = TextStyle(
+      fontWeight: FontWeight.w700,
+      fontSize: small ? 12 : 14,
+      color: MainApp.mutedText,
+    );
+    final heading = Row(
+      children: [
+        Icon(icon, size: small ? 14 : 16, color: MainApp.mutedText),
+        const SizedBox(width: 6),
+        Expanded(child: Text(title.tr, style: titleStyle)),
+        // [ExpandScriptButton]: a 16px icon centred in 34 by 22.
+        const SizedBox(
+          width: 34,
+          height: 22,
+          child: Center(
+            child: Icon(
+              Icons.open_in_full_rounded,
+              size: 16,
+              color: MainApp.mutedText,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // In a box of fixed height only the lines that fit are drawn: a
+        // skeleton must never paint outside the shape it stands in for.
+        var shown = lines;
+        if (constraints.hasBoundedHeight) {
+          final line = BoneText.lineHeight(context, _script);
+          final head = math.max(22.0, BoneText.lineHeight(context, titleStyle));
+          final room = constraints.maxHeight - _padding.vertical - head - 4;
+          shown = (room / line).floor().clamp(0, lines);
+        }
+        final body = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            heading,
+            const SizedBox(height: 4),
+            if (shown > 0)
+              Padding(
+                // The frame's scroller keeps clear of its scrollbar.
+                padding: kind == ScriptCardKind.frame
+                    ? const EdgeInsetsDirectional.only(end: 12)
+                    : EdgeInsets.zero,
+                child: BoneParagraph(lines: shown, style: _script),
+              ),
           ],
         );
-        if (flat) return body;
-        return BoneCard(padding: const EdgeInsets.all(16), child: body);
+        final decoration = switch (kind) {
+          ScriptCardKind.recorder => BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          _ => BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: MainApp.cardShadow,
+          ),
+        };
+        return Container(
+          width: double.infinity,
+          padding: _padding,
+          clipBehavior: Clip.antiAlias,
+          decoration: decoration,
+          child: body,
+        );
       },
     );
   }
 }
 
-/// A row in a list of Sets: a name, a line under it, something at the end.
-class SetRowBones extends StatelessWidget {
-  const SetRowBones({super.key, this.leading = false, this.statusLine = false});
+/// A page built round a recording: a scrolling list in the stage pages'
+/// shared padding, holding whatever the page puts in it - the page knows
+/// its own cards, and builds their loading shapes from its own widgets.
+class RecordingPageSkeleton extends StatelessWidget {
+  const RecordingPageSkeleton({super.key, required this.children});
 
-  /// A round icon at the start, as the Feedback list has.
-  final bool leading;
-
-  /// A third line under the name, as the Approved list's download state.
-  final bool statusLine;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
-    return BoneCard(
-      child: Row(
-        children: [
-          if (leading) ...[
-            const Bone.circle(size: 40),
-            const SizedBox(width: 14),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Bone(width: 190, height: 14),
-                const SizedBox(height: 7),
-                const Bone(width: 120, height: 11),
-                if (statusLine) ...[
-                  const SizedBox(height: 10),
-                  const Bone(width: 90, height: 10),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          const Bone.circle(size: 26),
-        ],
+    return Shimmer(
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        children: children,
       ),
     );
   }
 }
 
-/// A passage on the Set screen: its name, a state pill and the button.
-class PassageBones extends StatelessWidget {
-  const PassageBones({super.key});
+/// A stage page's bottom bar while the page loads: the line saying what
+/// stands in the way, and the buttons stacked under it - so the bar's room
+/// is there from the start rather than arriving with the page.
+class StageBarBones extends StatelessWidget {
+  const StageBarBones({
+    super.key,
+    required this.buttons,
+    this.reasonLines = 0,
+    this.reasonStyle = const TextStyle(fontSize: 11),
+    this.buttonHeight = 48,
+    this.padding = const EdgeInsets.fromLTRB(16, 0, 16, 14),
+    this.white = false,
+  });
+
+  /// The single forward button of the community stages' bars.
+  const StageBarBones.forward({super.key, this.reasonLines = 0})
+    : buttons = 1,
+      reasonStyle = const TextStyle(fontSize: 11),
+      buttonHeight = 48,
+      padding = const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      white = true;
+
+  final int buttons;
+  final int reasonLines;
+  final TextStyle reasonStyle;
+  final double buttonHeight;
+  final EdgeInsetsGeometry padding;
+
+  /// Whether the bar is a white strip of its own, as the community stages'
+  /// are.
+  final bool white;
 
   @override
   Widget build(BuildContext context) {
-    return BoneCard(
-      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Bone(width: 150, height: 14),
-                SizedBox(height: 8),
-                Bone(width: 84, height: 20, radius: 10),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          const Bone(width: 92, height: 36, radius: 10),
-        ],
-      ),
-    );
-  }
-}
-
-/// A question card with its answer and buttons, as the community pages
-/// show one.
-class QuestionBones extends StatelessWidget {
-  const QuestionBones({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return BoneCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Bone(width: 70, height: 10),
-          SizedBox(height: 10),
-          BoneLines(lines: 2, height: 12, gap: 8, lastWidth: 0.75),
-          SizedBox(height: 14),
-          Bone(height: 44, radius: 10),
-          SizedBox(height: 12),
-          Row(
+    if (buttons == 0) return const SizedBox.shrink();
+    return SafeArea(
+      child: Container(
+        color: white ? Colors.white : null,
+        padding: padding,
+        child: Shimmer(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Bone(width: 96, height: 34, radius: 10),
-              SizedBox(width: 10),
-              Bone(width: 96, height: 34, radius: 10),
+              if (reasonLines > 0)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: BoneParagraph(
+                    lines: reasonLines,
+                    style: reasonStyle,
+                    lastWidth: 0.5,
+                  ),
+                ),
+              for (var i = 0; i < buttons; i++) ...[
+                if (i > 0) const SizedBox(height: 10),
+                Bone(width: double.infinity, height: buttonHeight, radius: 10),
+              ],
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -483,7 +879,7 @@ class QuestionBones extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// The Workbench's tiles: an icon disc, a name, a count - in the same grid
-/// the real tiles use, so nothing moves when they arrive.
+/// and the same tile the real ones use, so nothing moves when they arrive.
 class WorkbenchSkeleton extends StatelessWidget {
   const WorkbenchSkeleton({
     super.key,
@@ -501,22 +897,29 @@ class WorkbenchSkeleton extends StatelessWidget {
         physics: const NeverScrollableScrollPhysics(),
         gridDelegate: gridDelegate,
         itemCount: tiles,
-        itemBuilder: (context, index) => Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: MainApp.cardShadow,
-          ),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Bone.circle(size: 52),
-                SizedBox(height: 14),
-                Bone(width: 88, height: 13),
-                SizedBox(height: 8),
-                Bone(width: 48, height: 11),
-              ],
+        itemBuilder: (context, index) => Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          clipBehavior: Clip.antiAlias,
+          elevation: 3,
+          shadowColor: MainApp.cardShadowColor,
+          surfaceTintColor: Colors.transparent,
+          child: const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Bone.circle(size: 52),
+                  SizedBox(height: 12),
+                  BoneText(
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                    width: 88,
+                  ),
+                  SizedBox(height: 4),
+                  BoneText(style: TextStyle(fontSize: 12), width: 48),
+                ],
+              ),
             ),
           ),
         ),
@@ -525,410 +928,269 @@ class WorkbenchSkeleton extends StatelessWidget {
   }
 }
 
-/// A stage's queue: the Set that is up next, in its card.
-class StageQueueSkeleton extends StatelessWidget {
-  const StageQueueSkeleton({super.key, this.picker = false});
-
-  /// Whether the drafter's "jump to" list sits above the card.
-  final bool picker;
-
-  @override
-  Widget build(BuildContext context) {
-    return Shimmer(
-      child: ListView(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-        children: [
-          if (picker) ...[
-            const Bone(width: 200, height: 11),
-            const SizedBox(height: 8),
-            const Bone(height: 48, radius: 10),
-            const SizedBox(height: 14),
-          ],
-          BoneCard(
-            padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
-            radius: 16,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Bone(width: 210, height: 15),
-                      SizedBox(height: 8),
-                      Bone(width: 130, height: 11),
-                      SizedBox(height: 12),
-                      Bone(width: 150, height: 24, radius: 12),
-                      SizedBox(height: 14),
-                      Bone(width: 160, height: 11),
-                      SizedBox(height: 8),
-                      Bone(height: 6, radius: 3),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Bone.circle(size: 22),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A list of Sets, one card per row.
-class SetListSkeleton extends StatelessWidget {
-  const SetListSkeleton({
-    super.key,
-    this.rows = 5,
-    this.leading = false,
-    this.statusLine = false,
-  });
-
-  final int rows;
-  final bool leading;
-  final bool statusLine;
-
-  @override
-  Widget build(BuildContext context) {
-    return Shimmer(
-      child: ListView.separated(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        itemCount: rows,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
-        itemBuilder: (_, _) =>
-            SetRowBones(leading: leading, statusLine: statusLine),
-      ),
-    );
-  }
-}
-
-/// A page built round a recording: the player first, then what the stage
-/// adds under it - question cards, or the two scripts.
-class RecordingPageSkeleton extends StatelessWidget {
-  const RecordingPageSkeleton({
-    super.key,
-    this.questions = 2,
-    this.scripts = false,
-    this.leadingCard = false,
-  });
-
-  /// How many question cards follow the player.
-  final int questions;
-
-  /// Whether the source and target scripts follow instead.
-  final bool scripts;
-
-  /// A card above the player - the consultant's back translation.
-  final bool leadingCard;
-
-  @override
-  Widget build(BuildContext context) {
-    return Shimmer(
-      child: ListView(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        children: [
-          if (leadingCard) ...[
-            const ScriptBones(lines: 4),
-            const SizedBox(height: 12),
-          ],
-          const PlayerBones(),
-          const SizedBox(height: 18),
-          if (scripts) ...[
-            const ScriptBones(lines: 6),
-            const SizedBox(height: 12),
-            const PlayerBones(),
-            const SizedBox(height: 12),
-            const ScriptBones(lines: 5),
-          ] else
-            for (var i = 0; i < questions; i++) ...[
-              const QuestionBones(),
-              const SizedBox(height: 12),
-            ],
-        ],
-      ),
-    );
-  }
-}
-
-/// The Set screen: its passages, then the recording and its buttons - or,
-/// for a reviewer, the two scripts with the players pinned under them.
-class SetDetailSkeleton extends StatelessWidget {
-  const SetDetailSkeleton({super.key, this.reviewer = false});
-
-  final bool reviewer;
-
-  @override
-  Widget build(BuildContext context) {
-    if (reviewer) {
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          final landscape =
-              MediaQuery.orientationOf(context) == Orientation.landscape;
-          // The real page's rule: under this height nothing is pinned and
-          // the whole page scrolls, scripts first, players after.
-          if (constraints.maxHeight < 480) {
-            final scripts = landscape
-                ? const Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: ScriptBones(lines: 5)),
-                      SizedBox(width: 10),
-                      Expanded(child: ScriptBones(lines: 5)),
-                    ],
-                  )
-                : const Column(
-                    children: [
-                      ScriptBones(lines: 5),
-                      SizedBox(height: 10),
-                      ScriptBones(lines: 5),
-                    ],
-                  );
-            return Shimmer(
-              child: ListView(
-                physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-                children: [
-                  scripts,
-                  const SizedBox(height: 10),
-                  const PlayerBones(),
-                  const SizedBox(height: 10),
-                  const PlayerBones(),
-                ],
-              ),
-            );
-          }
-          final frames = landscape
-              ? const Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(child: ScriptBones(lines: 7)),
-                    SizedBox(width: 10),
-                    Expanded(child: ScriptBones(lines: 7)),
-                  ],
-                )
-              : const Column(
-                  children: [
-                    Expanded(child: ScriptBones(lines: 7)),
-                    SizedBox(height: 10),
-                    Expanded(child: ScriptBones(lines: 7)),
-                  ],
-                );
-          return Shimmer(
-            child: Column(
-              children: [
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
-                    child: frames,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
-                  ),
-                  child: const Column(
-                    children: [
-                      PlayerBones(flat: true),
-                      SizedBox(height: 14),
-                      PlayerBones(flat: true),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    }
-    return Shimmer(
-      child: ListView(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
-        children: const [
-          PassageBones(),
-          SizedBox(height: 10),
-          PassageBones(),
-          SizedBox(height: 10),
-          PassageBones(),
-          SizedBox(height: 16),
-          PlayerBones(),
-        ],
-      ),
-    );
-  }
-}
-
-/// The recorder: the source player and two scripts above, the take slots
-/// and the mic card below, in the proportions of the real screen.
-class RecorderSkeleton extends StatelessWidget {
-  const RecorderSkeleton({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // The real pane's rule: under this height the passage panel cannot
-        // share the screen with the slots and the recorder, so the pane
-        // scrolls with the panel at a height of its own.
-        final split = constraints.maxHeight >= 480;
-        final panel = Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const PlayerBones(),
-            const SizedBox(height: 8),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final wide = constraints.maxWidth >= 600;
-                  if (wide) {
-                    return const Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(child: ScriptBones(lines: 6)),
-                        SizedBox(width: 12),
-                        Expanded(child: ScriptBones(lines: 6)),
-                      ],
-                    );
-                  }
-                  return const Column(
-                    children: [
-                      Expanded(child: ScriptBones(lines: 5)),
-                      SizedBox(height: 8),
-                      Expanded(child: ScriptBones(lines: 5)),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
-        );
-        final children = [
-          split ? Expanded(child: panel) : SizedBox(height: 360, child: panel),
-          const SizedBox(height: 8),
-          Row(
-            children: const [
-              Bone(width: 64, height: 44, radius: 10),
-              SizedBox(width: 8),
-              Bone(width: 64, height: 44, radius: 10),
-              SizedBox(width: 8),
-              Bone(width: 64, height: 44, radius: 10),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFE5E7EB)),
-            ),
-            child: Row(
-              children: const [
-                Expanded(child: Bone(height: 12)),
-                SizedBox(width: 16),
-                Bone.circle(size: 64),
-              ],
-            ),
-          ),
-        ];
-        return Shimmer(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
-            child: split
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: children,
-                  )
-                : ListView(
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: children,
-                  ),
-          ),
-        );
-      },
-    );
-  }
-}
-
 /// The Sync status screen: the summary strip, then a card per Set.
 class SyncStatusSkeleton extends StatelessWidget {
-  const SyncStatusSkeleton({super.key});
+  const SyncStatusSkeleton({super.key, this.clear});
+
+  /// Whether nothing is waiting, when that is already known: the strip is
+  /// then the green one with its words, and there are no cards under it.
+  final bool? clear;
 
   @override
   Widget build(BuildContext context) {
+    const heading = TextStyle(fontWeight: FontWeight.w700);
+    final known = clear;
     return Shimmer(
       child: ListView(
         physics: const NeverScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
+          // Tinted green or amber when it is known which; neutral until then.
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: switch (known) {
+                true => const Color(0xFFDCFCE7),
+                false => const Color(0xFFFEF3C7),
+                null => const Color(0xFFF1F2F4),
+              },
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
               children: [
-                const Bone.circle(size: 24),
+                known == true
+                    ? const Icon(
+                        Icons.cloud_done_outlined,
+                        color: Color(0xFF15803D),
+                      )
+                    // A plain Icon: 24.
+                    : const Bone.circle(size: 24),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Bone(width: 180, height: 13),
-                      SizedBox(height: 6),
-                      Bone(width: 130, height: 10),
+                    children: [
+                      known == true
+                          ? Text('Everything has been sent.'.tr, style: heading)
+                          : const BoneText(style: heading, widthFactor: 0.8),
+                      const SizedBox(height: 2),
+                      const BoneText(
+                        style: TextStyle(fontSize: 12),
+                        width: 150,
+                      ),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 14),
-          const SetRowBones(statusLine: true),
-          const SizedBox(height: 10),
-          const SetRowBones(statusLine: true),
+          if (known != true) const SizedBox(height: 14),
+          for (
+            var i = 0;
+            i <
+                (known == true
+                    ? 0
+                    : known == false
+                    ? 1
+                    : 2);
+            i++
+          ) ...[
+            const BoneCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Bone.circle(size: 18),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: BoneText(
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                          widthFactor: 0.7,
+                        ),
+                      ),
+                      BoneText(
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        width: 50,
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 6),
+                  BoneText(style: TextStyle(fontSize: 12), width: 160),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
         ],
       ),
     );
   }
 }
 
-/// A page of reading - the handbook before its WebView has drawn.
+/// The handbook before its WebView has drawn: its header as itself, and the
+/// top of the chapter it opens at.
 class ReadingSkeleton extends StatelessWidget {
   const ReadingSkeleton({super.key});
 
+  static const Color _page = Color(0xFFF4F6F7);
+
   @override
   Widget build(BuildContext context) {
-    return Shimmer(
-      child: ListView(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-        children: const [
+    final header = Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE1E6E6))),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Placed against the handbook's own header as it draws on a phone:
+          // the back arrow, the mascot, then the title.
           Row(
             children: [
-              Bone.circle(size: 40),
-              SizedBox(width: 12),
-              Bone(width: 180, height: 16),
+              const SizedBox(width: 2),
+              const Icon(Icons.arrow_back, size: 20),
+              const SizedBox(width: 16),
+              SvgPicture.asset(
+                'assets/brand/livuka-smile.svg',
+                width: 44,
+                height: 44,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'LIVUKA Phone Handbook',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             ],
           ),
-          SizedBox(height: 16),
-          Bone(height: 44, radius: 22),
-          SizedBox(height: 28),
-          Bone(width: 220, height: 20),
-          SizedBox(height: 14),
-          BoneLines(lines: 4, height: 12, gap: 10),
-          SizedBox(height: 18),
-          Bone(height: 120, radius: 12),
-          SizedBox(height: 18),
-          BoneLines(lines: 5, height: 12, gap: 10, lastWidth: 0.4),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 42,
+                  padding: const EdgeInsets.fromLTRB(14, 0, 10, 0),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0xFFE1E6E6)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.search,
+                        size: 18,
+                        color: MainApp.mutedText,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Search the manual',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: MainApp.mutedText,
+                          ),
+                        ),
+                      ),
+                      // The search's previous and next match.
+                      const Icon(
+                        Icons.keyboard_arrow_up,
+                        size: 20,
+                        color: MainApp.mutedText,
+                      ),
+                      const SizedBox(width: 14),
+                      const Icon(
+                        Icons.keyboard_arrow_down,
+                        size: 20,
+                        color: MainApp.mutedText,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFE1E6E6)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.menu, size: 16),
+                    SizedBox(width: 8),
+                    Text(
+                      'Steps',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
+      ),
+    );
+
+    return ColoredBox(
+      color: _page,
+      child: Shimmer(
+        child: ListView(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          children: [
+            header,
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 42, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Bone.circle(size: 34),
+                      SizedBox(width: 14),
+                      BoneText(style: TextStyle(fontSize: 24), width: 200),
+                    ],
+                  ),
+                  SizedBox(height: 5),
+                  BoneText(style: TextStyle(fontSize: 13.5), width: 220),
+                  SizedBox(height: 14),
+                  BoneParagraph(
+                    lines: 4,
+                    style: TextStyle(fontSize: 16, height: 1.62),
+                  ),
+                  // The chapter's step cards, as tall as three lines each.
+                  SizedBox(height: 12),
+                  Bone(height: 120, radius: 9),
+                  SizedBox(height: 11),
+                  Bone(height: 120, radius: 9),
+                  SizedBox(height: 11),
+                  Bone(height: 96, radius: 9),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

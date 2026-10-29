@@ -653,7 +653,7 @@ class _StageCard extends StatelessWidget {
             routeName: '/stage/${stage.meta.status}',
             () => stage.meta.status == WorkQueue.feedbackStage.status
                 ? const FeedbackPage()
-                : StageSetsPage(stage: stage.meta),
+                : StageSetsPage(stage: stage.meta, count: stage.count),
           );
           ManualPage.stageSection = null;
           // Work done in there changes both numbers on this screen.

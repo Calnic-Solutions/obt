@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
@@ -102,7 +104,10 @@ class StageSetsController extends GetxController {
         'community_review' => CommunityReviewPage(set: set),
         'back_translation' => BackTranslationPage(set: set),
         'consultant' => ConsultantPage(set: set),
-        _ => SetDetailPage(set: set),
+        _ => SetDetailPage(
+          set: set,
+          passages: countsFor(set).total == 0 ? null : countsFor(set).total,
+        ),
       },
     );
 
@@ -136,9 +141,15 @@ class StageSetsController extends GetxController {
 /// part-finished Sets from piling up behind. The picker is for the drafter
 /// who came here for a particular one and knows it.
 class StageSetsPage extends StatelessWidget {
-  const StageSetsPage({super.key, required this.stage});
+  const StageSetsPage({super.key, required this.stage, this.count});
 
   final StageMeta stage;
+
+  /// How many Sets the Workbench tile said were waiting here, when it is
+  /// known - so the page can be drawn in its loaded shape while it loads:
+  /// with the picker or the note over the card only when there is more
+  /// than one.
+  final int? count;
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +209,14 @@ class StageSetsPage extends StatelessWidget {
 
   Widget _body(StageSetsController controller, Color color) {
     if (controller.isLoading.value) {
-      return StageQueueSkeleton(picker: _showsPicker);
+      return _QueueSkeleton(
+        picker: _showsPicker,
+        count: count,
+        accent: color,
+        // "Sent back from <stage> - needs changes" takes the pill's two
+        // lines.
+        pillLines: stage.status == 'redo' ? 2 : 1,
+      );
     }
 
     final current = controller.current.value;
@@ -528,6 +546,156 @@ class _CurrentSetCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The queue while it loads: the drafter's picker and the card for the Set
+/// that is up next, in their own frames, with grey where the Set's own
+/// words will be.
+class _QueueSkeleton extends StatelessWidget {
+  const _QueueSkeleton({
+    required this.picker,
+    required this.count,
+    required this.accent,
+    this.pillLines = 1,
+  });
+
+  /// How many lines the status pill's words take.
+  final int pillLines;
+
+  /// Whether this stage offers the drafter's "jump to" list.
+  final bool picker;
+
+  /// How many Sets are waiting, when the Workbench said. The page shows
+  /// the list, or the note, only for more than one; not knowing, the list
+  /// is drawn.
+  final int? count;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    const small = TextStyle(fontSize: 12);
+    // The pill's padding round its icon or its lines of 12px text.
+    final pill =
+        10 +
+        math.max<double>(14, BoneText.lineHeight(context, small) * pillLines);
+    final many = (count ?? 2) > 1;
+    const heading = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      color: MainApp.mutedText,
+    );
+
+    return Shimmer(
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        children: [
+          if (!picker && count != null && count! > 1) ...[
+            _RemainingNote(count: count! - 1),
+            const SizedBox(height: 14),
+          ],
+          if (picker && many) ...[
+            // The picker's heading says only how many are waiting, which
+            // is known when the Workbench said.
+            count == null
+                ? const BoneText(style: heading, width: 230)
+                : Text(
+                    'Jump to a pending work item (@count pending)'.trParams({
+                      'count': '$count',
+                    }),
+                    style: heading,
+                  ),
+            const SizedBox(height: 6),
+            // [_SetPicker]'s box. Set names here run long, and the closed
+            // control wraps them to its three lines.
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFD1D5DB)),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: kMinInteractiveDimension,
+                ),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: BoneParagraph(
+                          lines: 3,
+                          style: TextStyle(fontSize: 13, height: 1.35),
+                          lastWidth: 0.55,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.expand_more_rounded, color: accent),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: MainApp.cardShadow,
+            ),
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 16, 12, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // The Set's name: one to three lines here; two is the
+                      // middle, so the card moves by a line at most.
+                      const BoneParagraph(
+                        lines: 2,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          height: 1.3,
+                        ),
+                        lastWidth: 0.5,
+                      ),
+                      const SizedBox(height: 4),
+                      const BoneText(style: small, width: 130),
+                      const SizedBox(height: 10),
+                      Bone(
+                        width: pillLines > 1 ? double.infinity : 150,
+                        height: pill,
+                        radius: 999,
+                      ),
+                      const SizedBox(height: 12),
+                      const BoneText(
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        width: 170,
+                      ),
+                      const SizedBox(height: 6),
+                      const Bone(height: 6, radius: 999),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 22,
+                  color: Color(0xFF9CA3AF),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

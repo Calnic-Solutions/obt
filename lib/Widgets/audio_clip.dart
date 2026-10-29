@@ -237,6 +237,17 @@ class _AudioClipState extends State<_PhoneClip> {
   /// reviewer still has to come back to.
   bool _heard = false;
 
+  /// Whether playback last ran out at the end, and nobody has pressed play
+  /// or moved the playhead since. Only then are all the bars drawn as
+  /// played: the player has wound itself back to the start, but the
+  /// listener has not, and what they last heard was the end.
+  ///
+  /// It used to be read off [_heard], the playhead sitting at zero and
+  /// nothing playing - which a change of speed or a pause just after
+  /// pressing play also produced, and a clip heard part way was drawn as
+  /// heard in full.
+  bool _atEnd = false;
+
   /// How far into the clip has been heard without a break.
   ///
   /// The drafter's mic waits on [AudioClip.onEnded], and "the file finished"
@@ -259,6 +270,10 @@ class _AudioClipState extends State<_PhoneClip> {
   /// Where the next play should pick up, after an end that did not count:
   /// the part not yet heard, rather than the whole clip again.
   Duration? _resumeAt;
+
+  /// Where the waveform was tapped while nothing was playing or paused.
+  /// Play starts there.
+  Duration? _startFrom;
 
   /// How far past [_heardUpTo] playback may be and still count as carrying
   /// straight on. Positions come about five times a second of real time,
@@ -328,16 +343,31 @@ class _AudioClipState extends State<_PhoneClip> {
 
       _listenedAt = Duration.zero;
       _paused = false;
-      if (mounted) setState(() => _position = Duration.zero);
+      _startFrom = null;
 
-      if (!listened) {
+      if (!listened && _mustListen) {
         // Only where a full listen is owed is the listener told, and
-        // taken back. Anywhere else the clip has simply ended.
-        if (!_mustListen) return;
+        // taken back - the bars and the clock with them, to the part not
+        // yet heard, which is where play picks up.
         _resumeAt = _heardUpTo;
-        if (mounted) setState(() => _skippedAhead = true);
+        if (mounted) {
+          setState(() {
+            _position = _heardUpTo;
+            _skippedAhead = true;
+          });
+        }
         return;
       }
+
+      // Played out to the end: drawn as played to the end until the
+      // listener does something, not snapped back to nothing.
+      if (mounted) {
+        setState(() {
+          _position = Duration.zero;
+          _atEnd = true;
+        });
+      }
+      if (!listened) return;
 
       if (mounted) setState(() => _heard = true);
       widget.onEnded?.call();
@@ -347,12 +377,17 @@ class _AudioClipState extends State<_PhoneClip> {
 
       // Zero is only believed at a start: a player winding itself back as
       // it finishes says zero too, and that is not where the listener was.
-      if (!(position == Duration.zero && _listenedAt > Duration.zero) &&
-          !_isStale(position)) {
-        _listenedAt = position;
-        if (position > _heardUpTo && position <= _heardUpTo + _tolerance) {
-          _heardUpTo = position;
-        }
+      // Nor is a place left over from before a seek. Neither moves the
+      // clock or the played bars: drawn, they sent the bars back to the
+      // start, or back to the old place, and then forward again.
+      if (position == Duration.zero && _listenedAt > Duration.zero) return;
+      if (_isStale(position)) return;
+      // Ran out and wound back: the end stands until the listener moves.
+      if (_atEnd && !_isPlaying) return;
+
+      _listenedAt = position;
+      if (position > _heardUpTo && position <= _heardUpTo + _tolerance) {
+        _heardUpTo = position;
       }
 
       setState(() => _position = position);
@@ -510,7 +545,13 @@ class _AudioClipState extends State<_PhoneClip> {
     // whichever player it was paused in.
     playback.onSegment = (_, _, offset) => widget.onPosition?.call(offset);
     playback.onEnded = () {
-      if (mounted) setState(() => _heard = true);
+      // Heard to the end in there: drawn as heard to the end here.
+      if (mounted) {
+        setState(() {
+          _heard = true;
+          _atEnd = true;
+        });
+      }
       widget.onEnded?.call();
     };
     unawaited(playback.prepare());
@@ -561,6 +602,9 @@ class _AudioClipState extends State<_PhoneClip> {
     // A tap is another go: what went wrong last time is not still wrong
     // until it goes wrong again.
     if (_error != null && mounted) setState(() => _error = null);
+    // Pressing play after the end starts it again: the bars follow the
+    // playhead from here.
+    if (!_isPlaying && _atEnd && mounted) setState(() => _atEnd = false);
     try {
       if (_isPlaying) {
         _paused = true;
@@ -576,10 +620,20 @@ class _AudioClipState extends State<_PhoneClip> {
         // sounding is stopped rather than briefly overlapping this one.
         AudioBus.instance.claim(this);
 
-        final resumeAt = _resumeAt;
+        // Where to start: wherever the waveform was tapped while stopped -
+        // the listener's own choice - else the part not yet heard after an
+        // end that did not count.
+        final resumeAt = _startFrom ?? _resumeAt;
         _resumeAt = null;
+        _startFrom = null;
         _listenedAt = resumeAt ?? Duration.zero;
         if (_skippedAhead && mounted) setState(() => _skippedAhead = false);
+        if (resumeAt != null && resumeAt > Duration.zero) {
+          // The file opens at its start and is wound on a moment later;
+          // the start it reports in between is not drawn.
+          _seekTarget = resumeAt;
+          _seekAsked = DateTime.now();
+        }
 
         await _audioPlayer.play(widget.filePath);
         // Playing a source starts it at normal pace, so a chosen speed has
@@ -638,16 +692,14 @@ class _AudioClipState extends State<_PhoneClip> {
     );
 
     // The bars underneath are always the unplayed grey, and the green is
-    // always the strip over them - only how much of it shows changes. Green
-    // covers the whole width once the clip has been heard and is back at its
-    // start, so a reviewer can see which clips they have been through; it
-    // covers what has been played otherwise.
+    // always the strip over them - only how much of it shows changes. It
+    // covers exactly what has been played up to the playhead, and the whole
+    // width only once playback has run out at the end and the listener has
+    // not moved since (see [_atEnd]).
     //
     // Recolouring the bars themselves meant rebuilding the waveform, which
     // reads on screen as the clip reloading the moment it finishes.
-    final played = _heard && !_isPlaying && _position == Duration.zero
-        ? 1.0
-        : progress;
+    final played = _atEnd ? 1.0 : progress;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -712,11 +764,16 @@ class _AudioClipState extends State<_PhoneClip> {
           child: Row(
             children: [
               // A grey disc where the play button will be, lit by the same
-              // moving light as every other loading shape in the app.
+              // moving light as every other loading shape in the app. In the
+              // button's own 25px box, so the waveform beside it starts at
+              // the same place before and after.
               _isLoading
-                  ? const Padding(
-                      padding: EdgeInsets.all(2),
-                      child: Shimmer(child: Bone.circle(size: 32)),
+                  ? const SizedBox(
+                      width: 25,
+                      height: 25,
+                      child: Center(
+                        child: Shimmer(child: Bone.circle(size: 20)),
+                      ),
                     )
                   : PulseHalo(
                       // Only while it is the thing to do: once it is playing,
@@ -793,7 +850,11 @@ class _AudioClipState extends State<_PhoneClip> {
             child: Row(
               children: [
                 Text(
-                  _isLoading ? '--:--' : _formatDuration(_position),
+                  _isLoading
+                      ? '--:--'
+                      // At the end, as the bars are, until the listener
+                      // moves.
+                      : _formatDuration(_atEnd ? _duration : _position),
                   style: clock,
                 ),
                 const Spacer(),
@@ -831,11 +892,28 @@ class _AudioClipState extends State<_PhoneClip> {
       milliseconds: (_duration.inMilliseconds * fraction.clamp(0.0, 1.0))
           .round(),
     );
+    // Drawn at the tap straight away, not when the player gets there: in
+    // between it went on reporting the old place, and the bars went there
+    // first.
+    if (mounted) {
+      setState(() {
+        _position = target;
+        _atEnd = false;
+      });
+    }
+
+    // Stopped - played out, or not started yet - there is no file open to
+    // wind: one that has played out has been let go of. The spot is kept,
+    // and play starts from it.
+    if (!_isPlaying && !_paused) {
+      _startFrom = target;
+      return;
+    }
+
     _listenedAt = target;
     _seekTarget = target;
     _seekAsked = DateTime.now();
     await _audioPlayer.seek(target);
-    if (mounted) setState(() => _position = target);
   }
 
   /// Pins, drawn at their share of the total duration. Nothing is placed

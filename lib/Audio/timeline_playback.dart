@@ -240,6 +240,17 @@ class TimelinePlayback extends ChangeNotifier {
   bool _heard = false;
   bool get heard => _heard;
 
+  /// Whether the reading last ran out at its end and nobody has pressed
+  /// play or moved the playhead since. Only then do the players draw every
+  /// bar as played: the playhead has been wound back to the start, but the
+  /// listener has not gone back, and what they last heard was the end.
+  ///
+  /// The players used to read this off [heard], nothing playing and the
+  /// playhead at zero - which pausing just after pressing play also
+  /// produced, and a reading heard part way was drawn as heard in full.
+  bool _atEnd = false;
+  bool get atEnd => _atEnd;
+
   bool _loading = true;
   bool get loading => _loading;
 
@@ -741,6 +752,7 @@ class TimelinePlayback extends ChangeNotifier {
     if (listened) {
       _index = 0;
       _offset = Duration.zero;
+      _atEnd = true;
       _heard = true;
       _heardUpTo = _total;
       _skippedAhead = false;
@@ -755,6 +767,9 @@ class TimelinePlayback extends ChangeNotifier {
     if (!mustListen) {
       _skippedAhead = false;
       _missedPassage = false;
+      // Played out to the end: drawn so until the listener moves, not
+      // snapped back to nothing.
+      _atEnd = true;
       _notify();
       await _moveTo(0, Duration.zero);
       return;
@@ -816,6 +831,8 @@ class TimelinePlayback extends ChangeNotifier {
     if (_loading || _total == Duration.zero || _running || _disposed) return;
 
     _running = true;
+    // Playing again from the start: the bars follow the playhead from here.
+    _atEnd = false;
     // The line about skipping has been read by now; what happens next is
     // the listening it asked for.
     _skippedAhead = false;
@@ -858,6 +875,8 @@ class TimelinePlayback extends ChangeNotifier {
   Future<void> seekTo(Duration absolute) async {
     if (_total == Duration.zero || _disposed) return;
 
+    // Moved by the listener: the bars follow the playhead from here.
+    _atEnd = false;
     _pendingSeek = absolute;
     if (_seeking) return;
 

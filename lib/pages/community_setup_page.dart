@@ -324,12 +324,12 @@ class CommunitySetupPage extends StatelessWidget {
           ),
           body: Obx(
             () => controller.isLoading.value
-                ? const RecordingPageSkeleton(questions: 2)
+                ? _SetupSkeleton(banner: SentBackBanner(set: controller.set))
                 : _body(controller),
           ),
           bottomNavigationBar: Obx(
             () => controller.isLoading.value
-                ? const SizedBox.shrink()
+                ? const StageBarBones.forward()
                 : _forwardBar(controller),
           ),
         ),
@@ -651,6 +651,49 @@ class _GeneralQuestionRow extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The page while it loads: the recording, and the two buttons for adding
+/// a question as themselves - they say the same before and after. The
+/// questions asked so far are usually none, and draw nothing.
+class _SetupSkeleton extends StatelessWidget {
+  const _SetupSkeleton({required this.banner});
+
+  final Widget banner;
+
+  @override
+  Widget build(BuildContext context) {
+    return RecordingPageSkeleton(
+      children: [
+        banner,
+        const PlayerBones(),
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: IgnorePointer(
+            child: Row(
+              children: [
+                Expanded(
+                  child: _AddQuestionButton(
+                    icon: Icons.question_mark_rounded,
+                    label: 'Add a question here',
+                    onPressed: () {},
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _AddQuestionButton(
+                    icon: Icons.wechat_rounded,
+                    label: 'Add a general question',
+                    onPressed: () {},
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

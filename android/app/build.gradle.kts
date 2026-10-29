@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.oralogos"
+    namespace = "in.calnicsolutions.obt"
     // permission_handler 13 will not build against anything older. Compiling
     // against 37 changes nothing about which phones can install the app -
     // that is minSdk - or how it behaves on them, which is targetSdk.
@@ -19,7 +19,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.oralogos"
+        applicationId = "in.calnicsolutions.obt"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

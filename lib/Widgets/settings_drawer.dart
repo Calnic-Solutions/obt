@@ -642,7 +642,13 @@ class _SyncTileState extends State<_SyncTile> {
           trailing: const Icon(Icons.chevron_right, color: MainApp.mutedText),
           onTap: () {
             Get.back();
-            Get.to(() => const SyncStatusPage());
+            Get.to(
+              () => SyncStatusPage(
+                clear: snapshot.data == null
+                    ? null
+                    : unsent == 0 && problems == 0,
+              ),
+            );
           },
         );
       },

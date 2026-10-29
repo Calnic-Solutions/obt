@@ -21,7 +21,12 @@ import 'package:livuka/services/work_queue.dart';
 /// except by the server accepting it or the user saying, in so many words,
 /// to give it up.
 class SyncStatusPage extends StatefulWidget {
-  const SyncStatusPage({super.key});
+  const SyncStatusPage({super.key, this.clear});
+
+  /// Whether whoever opened this already knows nothing is waiting to
+  /// send - the settings drawer reads that first - so the page can be
+  /// drawn in that shape while it loads.
+  final bool? clear;
 
   @override
   State<SyncStatusPage> createState() => _SyncStatusPageState();
@@ -155,7 +160,7 @@ class _SyncStatusPageState extends State<SyncStatusPage>
               ),
             ),
       body: _loading
-          ? const SyncStatusSkeleton()
+          ? SyncStatusSkeleton(clear: widget.clear)
           : PullToRefresh(
               onRefresh: _load,
               child: ListView(

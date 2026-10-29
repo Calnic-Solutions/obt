@@ -518,9 +518,13 @@ class SetDetailController extends GetxController {
 /// pins notes where it is wrong, rather than opening each passage in turn to
 /// find out which one is.
 class SetDetailPage extends StatelessWidget {
-  const SetDetailPage({super.key, required this.set});
+  const SetDetailPage({super.key, required this.set, this.passages});
 
   final WorkSet set;
+
+  /// How many passages the Set has, when the queue already counted them -
+  /// so the page is drawn with that many while it loads.
+  final int? passages;
 
   @override
   Widget build(BuildContext context) {
@@ -565,7 +569,7 @@ class SetDetailPage extends StatelessWidget {
           ),
           body: Obx(
             () => controller.isLoading.value
-                ? SetDetailSkeleton(reviewer: controller.isReviewer)
+                ? _SetDetailSkeleton(controller: controller, passages: passages)
                 : Stack(
                     children: [
                       Obx(() => _body(controller)),
@@ -589,8 +593,14 @@ class SetDetailPage extends StatelessWidget {
                   ),
           ),
           bottomNavigationBar: Obx(
+            // The bar's room is held while loading: appearing afterwards, it
+            // shortened the page under it and moved everything up a bar.
             () => controller.isLoading.value
-                ? const SizedBox.shrink()
+                ? _ActionBarBones(
+                    count: controller.actions.length,
+                    // A reviewer is always told what stands in the way.
+                    reason: controller.isReviewer,
+                  )
                 : _actionBar(controller),
           ),
         ),
@@ -1126,41 +1136,7 @@ class SetDetailPage extends StatelessWidget {
       children: [
         if (controller.isFinished) ...[
           const SizedBox(height: 10),
-          Padding(
-            padding: inset,
-            child: SizedBox(
-              height: 48,
-              width: double.infinity,
-              // As on the website (2026-09-25): a "Task Done" indicator
-              // where the download button used to be - drafters are no
-              // longer offered a download of the final audio.
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDCFCE7),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.check_circle,
-                      size: 18,
-                      color: Color(0xFF166534),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Task Done'.tr,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF166534),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          Padding(padding: inset, child: const _TaskDone()),
         ],
         if (controller.canAddNotes) ...[
           const SizedBox(height: 10),
@@ -1675,6 +1651,329 @@ class _PinnedPlayers extends StatelessWidget {
               if (child != children.last) const SizedBox(height: 8),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// As on the website (2026-09-25): a "Task Done" indicator where the
+/// download button used to be - drafters are no longer offered a download
+/// of the final audio.
+class _TaskDone extends StatelessWidget {
+  const _TaskDone();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      width: double.infinity,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xFFDCFCE7),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.check_circle, size: 18, color: Color(0xFF166534)),
+            const SizedBox(width: 8),
+            Text(
+              'Task Done'.tr,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF166534),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The Set screen while it loads, laid out by the same rules as the page:
+/// the role and the Set's status are known before anything is read, and
+/// they decide which layout is coming.
+class _SetDetailSkeleton extends StatelessWidget {
+  const _SetDetailSkeleton({required this.controller, this.passages});
+
+  /// See [SetDetailPage.passages]. Three when nobody said.
+  final int? passages;
+
+  final SetDetailController controller;
+
+  static const Set<String> _drafting = {'not_started', 'recorded', 'redo'};
+
+  @override
+  Widget build(BuildContext context) {
+    if (controller.isReviewer && controller.showsSourceAudio) {
+      return LayoutBuilder(
+        // The page's own rule for when the players cannot be pinned.
+        builder: (context, constraints) => constraints.maxHeight < 480
+            ? _reviewerScrolling()
+            : _reviewerPinned(context),
+      );
+    }
+
+    final reviewer = controller.isReviewer;
+    final finished = controller.isFinished;
+    // While drafting, the merged draft only exists once every passage has a
+    // final take, which is not known yet - drawn as absent, the usual case.
+    final drafting = _drafting.contains(controller.set.workflowStatus);
+    final player = !drafting;
+
+    return Shimmer(
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+        children: [
+          if (!reviewer && !finished && drafting) ...[
+            const _NoticeBones(),
+            const SizedBox(height: 10),
+          ],
+          SentBackBanner(set: controller.set),
+          if (!reviewer && !finished)
+            for (var i = 0; i < (passages ?? 3); i++) ...[
+              const _PassageChipBones(),
+              const SizedBox(height: 10),
+            ],
+          const SizedBox(height: 10),
+          if (player)
+            PlayerBones(
+              hint: controller.canAddNotes
+                  ? 'Tap the waveform to jump to a spot, then leave a note '
+                        'there.'
+                  : 'Tap the waveform to jump to a spot.',
+            ),
+          if (player && finished) ...[
+            const SizedBox(height: 10),
+            const _TaskDone(),
+          ],
+          if (player && controller.canAddNotes) ...[
+            const SizedBox(height: 10),
+            const _CommentButtonBones(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// The two recordings a reviewer hears, each as its card's content.
+  List<Widget> _players() => [
+    const PlayerBones.source(flat: true),
+    Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const PlayerBones(flat: true),
+        if (controller.canAddNotes) ...[
+          const SizedBox(height: 10),
+          const _CommentButtonBones(),
+        ],
+      ],
+    ),
+  ];
+
+  Widget _reviewerPinned(BuildContext context) {
+    const source = ScriptBones.source(kind: ScriptCardKind.frame, lines: 20);
+    const target = ScriptBones.target(kind: ScriptCardKind.frame, lines: 20);
+    final frames = ScriptPair.sideBySide(context)
+        ? const Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: source),
+              SizedBox(width: 10),
+              Expanded(child: target),
+            ],
+          )
+        : const Column(
+            children: [
+              Expanded(child: source),
+              SizedBox(height: 10),
+              Expanded(child: target),
+            ],
+          );
+
+    return Shimmer(
+      child: Column(
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
+              child: Column(
+                children: [
+                  SentBackBanner(set: controller.set),
+                  Expanded(child: frames),
+                ],
+              ),
+            ),
+          ),
+          _PinnedPlayers(children: _players()),
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewerScrolling() {
+    return Shimmer(
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+        children: [
+          SentBackBanner(set: controller.set),
+          const ScriptPair(
+            source: ScriptBones.source(lines: 5),
+            target: ScriptBones.target(lines: 5),
+          ),
+          const SizedBox(height: 10),
+          for (final player in _players()) ...[
+            Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: MainApp.cardShadow,
+              ),
+              child: player,
+            ),
+            const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A passage card still loading: [_PassageChip]'s frame, its name as a
+/// line, and its pill and button as shapes of their real size.
+class _PassageChipBones extends StatelessWidget {
+  const _PassageChipBones();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 3,
+      shadowColor: MainApp.cardShadowColor,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const BoneText(
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                    width: 150,
+                  ),
+                  const SizedBox(height: 4),
+                  BoneShape(
+                    radius: 999,
+                    child: const _Pill(
+                      icon: Icons.mic_none,
+                      label: 'Not started',
+                      color: Color(0xFF667085),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            BoneShape(
+              radius: 10,
+              child: _RecordButton(rerecord: false, onTap: () {}),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// [_Notice] holding a sentence still being worked out.
+class _NoticeBones extends StatelessWidget {
+  const _NoticeBones();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F2F4),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const BoneParagraph(
+        lines: 2,
+        style: TextStyle(fontSize: 12, height: 1.4),
+      ),
+    );
+  }
+}
+
+/// The reviewer's "Add a note here", which is the same before and after
+/// loading - drawn as itself, out of reach until the page is ready.
+class _CommentButtonBones extends StatelessWidget {
+  const _CommentButtonBones();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: CommentButton(label: 'Add a note here', onPressed: () {}),
+    );
+  }
+}
+
+/// The action bar's room while loading, one shape per hand-off, so the
+/// page above it is already the height it will be.
+class _ActionBarBones extends StatelessWidget {
+  const _ActionBarBones({required this.count, this.reason = false});
+
+  final int count;
+
+  /// Whether the bar carries [SetDetailController.blockedReason] over its
+  /// buttons. Its usual wording before anything has been played - "Play
+  /// both recordings to the end..." - takes two lines.
+  final bool reason;
+
+  @override
+  Widget build(BuildContext context) {
+    if (count == 0) return const SizedBox.shrink();
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        child: Shimmer(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (reason)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: BoneParagraph(
+                    lines: 2,
+                    style: TextStyle(fontSize: 11),
+                    lastWidth: 0.7,
+                  ),
+                ),
+              Row(
+                children: [
+                  for (var i = 0; i < count; i++) ...[
+                    if (i > 0) const SizedBox(width: 10),
+                    const Expanded(child: Bone(height: 58, radius: 10)),
+                  ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

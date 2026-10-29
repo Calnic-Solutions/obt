@@ -250,12 +250,14 @@ class CommunityTestPage extends StatelessWidget {
           ),
           body: Obx(
             () => controller.isLoading.value
-                ? const RecordingPageSkeleton(questions: 2)
+                ? _TestSkeleton(controller: controller)
                 : _questionList(controller),
           ),
           bottomNavigationBar: Obx(
             () => controller.isLoading.value
-                ? const SizedBox.shrink()
+                ? StageBarBones.forward(
+                    reasonLines: controller.heardInFull.value ? 0 : 1,
+                  )
                 : _forwardBar(controller),
           ),
         ),
@@ -735,6 +737,122 @@ class _NoQuestions extends StatelessWidget {
           Text(
             'No questions to test yet.'.tr,
             style: const TextStyle(fontSize: 12, color: MainApp.mutedText),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The page while it loads. Whether the room has heard the recording is
+/// the first thing the load reads, so the skeleton follows it: the "listen
+/// first" panel as itself until then, and question cards once it has.
+class _TestSkeleton extends StatelessWidget {
+  const _TestSkeleton({required this.controller});
+
+  final CommunityTestController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final heard = controller.heardInFull.value;
+    return RecordingPageSkeleton(
+      children: [
+        SentBackBanner(set: controller.set),
+        PlayerBones(marks: heard),
+        const SizedBox(height: 18),
+        if (!heard)
+          const _ListenFirst()
+        else ...[
+          Row(
+            children: [
+              Text(
+                'Questions'.tr,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const BoneText(style: TextStyle(fontSize: 12), width: 80),
+            ],
+          ),
+          const SizedBox(height: 12),
+          for (var i = 0; i < 2; i++) ...[
+            const _QuestionCardBones(),
+            const SizedBox(height: 12),
+          ],
+        ],
+      ],
+    );
+  }
+}
+
+/// The question card while it loads: its tag and Answer button as shapes
+/// of their real size, grey where the question goes.
+class _QuestionCardBones extends StatelessWidget {
+  const _QuestionCardBones();
+
+  @override
+  Widget build(BuildContext context) {
+    return BoneCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // [QuestionScopeTag] for a passage, at a typical name's length.
+          const BoneShape(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.place_outlined, size: 12),
+                  SizedBox(width: 4),
+                  Text(
+                    'Passage 1',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Bone(width: 22, height: 22, radius: 6),
+              SizedBox(width: 8),
+              Expanded(
+                child: BoneText(
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  widthFactor: 0.85,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // The Answer button, laid out exactly as the card lays it out.
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: BoneShape(
+              radius: 8,
+              child: FilledButton.icon(
+                onPressed: () {},
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 10,
+                  ),
+                ),
+                icon: const Icon(Icons.reply_rounded, size: 16),
+                label: Text(
+                  'Answer'.tr,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
